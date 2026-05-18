@@ -20,10 +20,29 @@ function processTemplate(
     quote: string;
   },
 ): string {
+  // Only use the quote part of the template — strip the {bibleRefLinked} line
+  // since the reference already exists in the note
   return template
     .replace(/\{bibleRef\}/g, variables.bibleRef.trim())
     .replace(/\{bibleRefLinked\}/g, variables.bibleRefLinked.trim())
     .replace(/\{quote\}/g, variables.quote.trim());
+}
+
+/**
+ * Given a full template output, strip the first line if it only contains
+ * the bibleRef or bibleRefLinked (since the link already exists in the note).
+ * This prevents duplicating the reference.
+ */
+function stripReferenceLine(templateOutput: string, bibleRefLinked: string, bibleRef: string): string {
+  const lines = templateOutput.split('\n');
+  const firstLine = lines[0].trim();
+
+  // If the first line is just the reference link, remove it
+  if (firstLine === bibleRefLinked.trim() || firstLine === bibleRef.trim()) {
+    return lines.slice(1).join('\n');
+  }
+
+  return templateOutput;
 }
 
 async function generateBibleQuoteText(
@@ -32,23 +51,15 @@ async function generateBibleQuoteText(
   provider: BibleCitationProvider,
 ): Promise<string | null> {
   try {
-    logger.log('generateBibleQuoteText: fetching text for', linkInfo.reference);
     const result = await provider.getCitation(
       linkInfo.reference,
       getBookLanguage(settings.language),
     );
 
     if (!result.success || !result.text) {
-      logger.warn(
-        'generateBibleQuoteText: fetch failed —',
-        result.error ?? 'empty text',
-        'success:',
-        result.success,
-      );
+      logger.warn('generateBibleQuoteText: fetch failed —', result.error ?? 'empty text');
       return null;
     }
-
-    logger.log('generateBibleQuoteText: fetched text length:', result.text.length);
 
     const bibleRefLinked = convertBibleTextToMarkdownLink(linkInfo.reference, settings);
     if (!bibleRefLinked) {
@@ -58,13 +69,14 @@ async function generateBibleQuoteText(
 
     const bibleRef = formatBibleText(linkInfo.reference, settings.bookLength, settings.language);
 
-    const processed = processTemplate(settings.bibleQuote.template, {
+    const fullOutput = processTemplate(settings.bibleQuote.template, {
       bibleRef,
       bibleRefLinked,
       quote: result.text,
     });
 
-    return processed;
+    // Remove the reference line from the output — it already exists in the note
+    return stripReferenceLine(fullOutput, bibleRefLinked, bibleRef);
   } catch (error: unknown) {
     logger.error(
       'generateBibleQuoteText: error:',
@@ -72,6 +84,30 @@ async function generateBibleQuoteText(
     );
     return null;
   }
+}
+
+/**
+ * Finds the character position immediately after a given URL within a line of markdown.
+ * Handles both [text](url) markdown links and bare URLs.
+ */
+function findEndOfLinkInLine(line: string, url: string): number {
+  // Look for markdown link pattern [text](url)
+  const escapedUrl = url.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const markdownLinkRegex = new RegExp(`\\[[^\\]]*\\]\\(${escapedUrl}[^)]*\\)`);
+  const match = line.match(markdownLinkRegex);
+
+  if (match && match.index !== undefined) {
+    return match.index + match[0].length;
+  }
+
+  // Fallback: find bare URL
+  const urlIndex = line.indexOf(url);
+  if (urlIndex !== -1) {
+    return urlIndex + url.length;
+  }
+
+  // Last resort: end of line
+  return line.length;
 }
 
 interface InsertQuotesResult {
@@ -91,18 +127,6 @@ export async function insertAllBibleQuotes(
   logger.log('insertAllBibleQuotes: found links:', links.length);
 
   if (links.length === 0) {
-    // Log all lines for debugging detection issues
-    const totalLines = editor.lastLine() + 1;
-    logger.log(`insertAllBibleQuotes: scanned ${totalLines} lines, no links found`);
-    for (let i = 0; i <= editor.lastLine(); i++) {
-      const line = editor.getLine(i);
-      if (line.includes('jwlibrary')) {
-        logger.warn(
-          `insertAllBibleQuotes: line ${i} contains 'jwlibrary' but regex did not match:`,
-          JSON.stringify(line),
-        );
-      }
-    }
     return { inserted: 0, linksFound: 0, fetchFailed: 0 };
   }
 
@@ -115,58 +139,57 @@ export async function insertAllBibleQuotes(
   let skippedAlreadyQuoted = 0;
   let fetchFailed = 0;
 
-  // Process links in reverse order to maintain line numbers
+  // Process in reverse order to preserve line/character positions
   for (let i = links.length - 1; i >= 0; i--) {
     const linkInfo = links[i];
 
-    if (linkInfo.lineNumber > editor.lastLine()) {
-      continue;
-    }
+    if (linkInfo.lineNumber > editor.lastLine()) continue;
 
     const currentLine = editor.getLine(linkInfo.lineNumber);
     const nextLine =
       linkInfo.lineNumber < editor.lastLine() ? editor.getLine(linkInfo.lineNumber + 1) : '';
 
-    // Skip if quote already exists
-    if (
-      currentLine &&
-      currentLine.trim().startsWith('>') &&
-      nextLine &&
-      nextLine.trim().startsWith('>')
-    ) {
+    // Skip if a quote block already follows this line
+    if (nextLine && nextLine.trim().startsWith('>')) {
       skippedAlreadyQuoted++;
-      logger.log(
-        `insertAllBibleQuotes: skipping link on line ${linkInfo.lineNumber} — already quoted`,
-      );
+      logger.log(`Skipping line ${linkInfo.lineNumber} — already has quote below`);
       continue;
     }
 
     try {
       const quoteText = await generateBibleQuoteText(linkInfo, settings, provider);
       if (quoteText) {
+        // Find exactly where the link ends in the line
+        const insertAt = findEndOfLinkInLine(currentLine, linkInfo.url);
+
+        // Get text before and after the link on the same line
+        const textAfterLink = currentLine.substring(insertAt);
+
+        // Build insertion: newline + quote + any text that was after the link
+        let insertion = '\n' + quoteText;
+        if (textAfterLink.trim()) {
+          insertion += '\n' + textAfterLink.trim();
+        }
+
         changes.push({
-          from: { line: linkInfo.lineNumber, ch: 0 },
+          from: { line: linkInfo.lineNumber, ch: insertAt },
           to: { line: linkInfo.lineNumber, ch: currentLine.length },
-          text: quoteText,
+          text: insertion,
         });
       } else {
         fetchFailed++;
-        logger.warn(
-          `insertAllBibleQuotes: generateBibleQuoteText returned null for link on line ${linkInfo.lineNumber}`,
-        );
       }
     } catch (error: unknown) {
       fetchFailed++;
       logger.error(
-        `Error processing Bible quote for link ${i}:`,
+        `Error processing link ${i}:`,
         error instanceof Error ? error.message : String(error),
       );
-      continue;
     }
   }
 
   logger.log(
-    `insertAllBibleQuotes: ${links.length} links found, ${changes.length} quotes generated, ${skippedAlreadyQuoted} already quoted, ${fetchFailed} failed`,
+    `insertAllBibleQuotes: ${links.length} found, ${changes.length} inserted, ${skippedAlreadyQuoted} skipped, ${fetchFailed} failed`,
   );
 
   if (changes.length > 0) {
@@ -184,8 +207,6 @@ export async function insertBibleQuoteAtCursor(
   const cursor = editor.getCursor();
   const cursorLine = cursor.line;
 
-  logger.log('insertBibleQuoteAtCursor', cursorLine);
-
   if (cursorLine > editor.lastLine()) {
     return { inserted: false, alreadyExists: false, fetchFailed: false };
   }
@@ -193,13 +214,8 @@ export async function insertBibleQuoteAtCursor(
   const currentLine = editor.getLine(cursorLine);
   const nextLine = cursorLine < editor.lastLine() ? editor.getLine(cursorLine + 1) : '';
 
-  // Skip if already formatted as callout or if next line is a quote
-  if (
-    currentLine &&
-    currentLine.trim().startsWith('>') &&
-    nextLine &&
-    nextLine.trim().startsWith('>')
-  ) {
+  // Skip if quote already exists below
+  if (nextLine && nextLine.trim().startsWith('>')) {
     return { inserted: false, alreadyExists: true, fetchFailed: false };
   }
 
@@ -228,19 +244,16 @@ export async function insertBibleQuoteAtCursor(
     return { inserted: false, alreadyExists: false, fetchFailed: false };
   }
 
+  // Use the last link on the line as the insertion point
+  const lastLink = linksOnTargetLine[linksOnTargetLine.length - 1];
+  const insertAt = findEndOfLinkInLine(targetLineText, lastLink.url);
+  const textAfterLink = targetLineText.substring(insertAt);
+
   const quoteTexts: string[] = [];
   for (const linkInfo of linksOnTargetLine) {
     const reference = parseJWLibraryLink(linkInfo.url);
-    logger.log('reference', reference);
     if (reference) {
-      const quoteText = await generateBibleQuoteText(
-        {
-          ...linkInfo,
-          reference,
-        },
-        settings,
-        provider,
-      );
+      const quoteText = await generateBibleQuoteText({ ...linkInfo, reference }, settings, provider);
       if (quoteText) {
         quoteTexts.push(quoteText);
       }
@@ -248,11 +261,15 @@ export async function insertBibleQuoteAtCursor(
   }
 
   if (quoteTexts.length > 0) {
-    const combinedText = quoteTexts.join('\n\n');
+    let combinedText = '\n' + quoteTexts.join('\n\n');
+    if (textAfterLink.trim()) {
+      combinedText += '\n' + textAfterLink.trim();
+    }
+
     editor.transaction({
       changes: [
         {
-          from: { line: targetLineNumber, ch: 0 },
+          from: { line: targetLineNumber, ch: insertAt },
           to: { line: targetLineNumber, ch: targetLineText.length },
           text: combinedText,
         },
