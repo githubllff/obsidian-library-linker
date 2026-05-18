@@ -1,11 +1,11 @@
 {
-  "id": "jw-library-linker",
-  "name": "JW Library Linker",
-  "version": "0.14.0",
+  "id": "jw-library-linker-lukes",
+  "name": "JW Library Linker Lukes",
+  "version": "1.3",
   "minAppVersion": "1.7.2",
   "description": "Converts JW Library references to actual links in JW Library.",
-  "author": "Martin Sakowski",
-  "authorUrl": "https://github.com/msakowski",
-  "fundingUrl": "https://buymeacoffee.com/m12i",
+  "author": "Luke Farr",
+  "authorUrl": "https://github.com/githubllff",
+  "fundingUrl": "na",
   "isDesktopOnly": false
 }
