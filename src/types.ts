@@ -59,6 +59,7 @@ export interface LinkReplacerSettings extends LinkStyles {
   linkFormat: LinkFormat;
   bibleQuote: BibleQuoteSettings;
   offlineBible: OfflineBibleSettings;
+  insertQuoteAutomatically: boolean;
 }
 
 export interface BibleBook {
