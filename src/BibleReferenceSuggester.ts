@@ -48,8 +48,6 @@ export class BibleReferenceSuggester extends EditorSuggest<BibleSuggestion> {
     const match = line.match(BIBLE_REFERENCE_REGEX) || line.match(this.getBookRegex());
 
     if (match?.[0]) {
-      // The regex may over-match leading words (e.g. "some text before John 3:16").
-      // Trim from the front to find the actual book name.
       const result = extractBibleReferenceFromMatch(match[0], this.plugin.settings.language);
 
       if (result) {
@@ -57,11 +55,9 @@ export class BibleReferenceSuggester extends EditorSuggest<BibleSuggestion> {
         const matchStart = rawMatchStart + result.offset;
         const matchEnd = matchStart + result.text.length;
 
-        // Check if the matched reference is already inside a markdown link
         const beforeMatch = line.substring(0, matchStart);
         const afterMatch = line.substring(matchEnd);
 
-        // Look for markdown link pattern: [***text***](...)
         const hasLinkBefore = /\[\*{0,2}$/.test(beforeMatch);
         const hasLinkAfter = /^\*{0,2}\]\(/.test(afterMatch);
         const isAlreadyLinked = hasLinkBefore && hasLinkAfter;
@@ -85,26 +81,22 @@ export class BibleReferenceSuggester extends EditorSuggest<BibleSuggestion> {
     /**
      * Command mode: If there is a /b, show detailed suggestions
      */
-
-    // Find position of /b
     const trigger = TRIGGER;
     const commandIndex = line.lastIndexOf(trigger);
     if (commandIndex === -1) return null;
 
-    // Get the text after /b
     const afterCommand = line.slice(commandIndex + trigger.length);
-    // Show suggestions if there's any text after "/b "
     if (afterCommand.length > 0) {
       return {
         start: {
-          ch: commandIndex, // Start from the /b
+          ch: commandIndex,
           line: cursor.line,
         },
         end: {
           ch: line.length,
           line: cursor.line,
         },
-        query: afterCommand.trim(), // Trim to handle the space case
+        query: afterCommand.trim(),
       };
     }
 
@@ -116,7 +108,6 @@ export class BibleReferenceSuggester extends EditorSuggest<BibleSuggestion> {
 
     const isExplicitMode = query.includes(TRIGGER);
 
-    // If query is empty (just typed "/b "), show a simple typing message without the {text} placeholder
     if (query.length === 0 && isExplicitMode) {
       return [
         {
@@ -127,13 +118,10 @@ export class BibleReferenceSuggester extends EditorSuggest<BibleSuggestion> {
       ];
     }
 
-    // Silent mode: use generic regex to avoid false positives
     if (!isExplicitMode && !query.match(BIBLE_REFERENCE_REGEX)) {
       return [];
     }
 
-    // Try parsing the reference directly — this handles all book name formats
-    // including multi-word, hyphenated, and digit-suffixed names
     let reference: BibleReference | null = null;
 
     try {
@@ -175,7 +163,6 @@ export class BibleReferenceSuggester extends EditorSuggest<BibleSuggestion> {
       },
     ];
 
-    // If there are multiple links, add individual open options
     if (hasMultipleLinks) {
       suggestions.push({
         text: query,
@@ -190,7 +177,6 @@ export class BibleReferenceSuggester extends EditorSuggest<BibleSuggestion> {
       });
     }
     if (this.plugin.settings.openAutomatically) {
-      //Move the create and open suggestion to the top
       suggestions.unshift(suggestions.pop()!);
     }
 
@@ -212,28 +198,34 @@ export class BibleReferenceSuggester extends EditorSuggest<BibleSuggestion> {
       ? undefined
       : this.plugin.settings.language;
 
-    // Convert the Bible reference to a link
     const convertedLink = convertBibleTextToMarkdownLink(reference, this.plugin.settings);
 
     if (suggestion.command === 'typing' || !convertedLink) {
       return;
     }
 
-    // Replace the entire command and reference with the converted link
+    // Replace the typed reference with the markdown link
     editor.replaceRange(convertedLink, context.start, context.end);
 
-    // Force close the suggestion box to prevent it from staying open with italic formatting
+    // Force close the suggestion box
     this.close();
 
     // Handle opening links
     if (suggestion.command === 'open') {
       const url = formatJWLibraryLink(reference, linkLanguage);
       if (Array.isArray(url)) {
-        // For open-specific, open the specified link, otherwise open first
         window.open(url[suggestion.linkIndex || 0]);
       } else {
         window.open(url);
       }
+    }
+
+    // Auto-insert the Bible quote beneath the link if enabled
+    if (this.plugin.settings.insertQuoteAutomatically) {
+      // Use a short delay so the editor has finished processing the link insertion
+      setTimeout(() => {
+        void this.plugin.insertBibleQuoteForReference(editor, reference);
+      }, 100);
     }
   }
 }
