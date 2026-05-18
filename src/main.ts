@@ -1,6 +1,6 @@
 import { Editor, Notice, Plugin, Menu } from 'obsidian';
 import { ConversionType, convertLinks } from '@/utils/convertLinks';
-import type { LinkReplacerSettings, LinkStyles, BibleQuoteFormat } from '@/types';
+import type { LinkReplacerSettings, LinkStyles, BibleQuoteFormat, BibleReference } from '@/types';
 import { BIBLE_QUOTE_TEMPLATES } from '@/types';
 import { TranslationService } from '@/services/TranslationService';
 import { VaultOfflineBibleRepository } from '@/services/VaultOfflineBibleRepository';
@@ -32,6 +32,7 @@ export const DEFAULT_STYLES: LinkStyles = {
 export const DEFAULT_SETTINGS: LinkReplacerSettings = {
   language: 'E',
   openAutomatically: false,
+  insertQuoteAutomatically: false,
   updatedLinkStructure: 'keepCurrentStructure',
   noLanguageParameter: false,
   reconvertExistingLinks: false,
@@ -60,7 +61,7 @@ function migrateFormatToTemplate(format: BibleQuoteFormat): string {
   }
 }
 
-// Matches both jwlibrary:///finder?bible=... and https://www.jw.org/finder?...bible=...
+// Matches both jwlibrary:///finder?bible=... and jw.org/finder links
 const ANY_BIBLE_LINK_REGEX =
   /(?:jwlibrary:\/\/\/finder\?bible=\d{8}(?:-\d{8})?(?:&[^)\s]*)?|https:\/\/www\.jw\.org\/finder\?[^)"\s]*bible=\d{8}(?:-\d{8})?(?:&[^)"\s]*)?)/;
 
@@ -242,7 +243,6 @@ export default class JWLibraryLinkerPlugin extends Plugin {
         const cursor = editor.getCursor();
         const line = editor.getLine(cursor.line);
 
-        // Updated regex: matches both jwlibrary:// and jw.org/finder links
         if (ANY_BIBLE_LINK_REGEX.test(line)) {
           menu.addItem((item) => {
             item
@@ -267,7 +267,7 @@ export default class JWLibraryLinkerPlugin extends Plugin {
                 } catch (error: unknown) {
                   logger.error(
                     'Error inserting Bible quote from context menu:',
-                                     error instanceof Error ? error.message : String(error),
+                    error instanceof Error ? error.message : String(error),
                   );
                   new Notice(this.t('notices.errorInsertingQuotes'));
                 }
@@ -294,6 +294,40 @@ export default class JWLibraryLinkerPlugin extends Plugin {
 
   getEpubImportService(): BibleEpubImportService {
     return this.epubImportService;
+  }
+
+  /**
+   * Fetches and inserts the Bible quote for a given reference at the current
+   * cursor position in the editor, using the configured quote template.
+   * Called by both the command palette and the auto-insert feature in
+   * BibleReferenceSuggester when insertQuoteAutomatically is enabled.
+   */
+  public async insertBibleQuoteForReference(
+    editor: Editor,
+    _reference: BibleReference,
+  ): Promise<void> {
+    try {
+      const result = await insertBibleQuoteAtCursor(
+        editor,
+        this.settings,
+        this.bibleCitationProvider,
+      );
+      if (result.inserted) {
+        new Notice(this.t('notices.bibleQuoteInsertedAtCursor'));
+      } else if (result.alreadyExists) {
+        // Silently skip — the quote is already there
+      } else if (result.fetchFailed) {
+        new Notice(this.t('notices.bibleQuoteFetchFailed'));
+      }
+      // No notice for noBibleLinkAtCursor — the link was just inserted so
+      // this would only happen if the cursor moved unexpectedly.
+    } catch (error: unknown) {
+      logger.error(
+        'Error auto-inserting Bible quote:',
+        error instanceof Error ? error.message : String(error),
+      );
+      new Notice(this.t('notices.errorInsertingQuotes'));
+    }
   }
 
   async loadSettings() {
