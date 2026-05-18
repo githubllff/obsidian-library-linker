@@ -60,6 +60,10 @@ function migrateFormatToTemplate(format: BibleQuoteFormat): string {
   }
 }
 
+// Matches both jwlibrary:///finder?bible=... and https://www.jw.org/finder?...bible=...
+const ANY_BIBLE_LINK_REGEX =
+  /(?:jwlibrary:\/\/\/finder\?bible=\d{8}(?:-\d{8})?(?:&[^)\s]*)?|https:\/\/www\.jw\.org\/finder\?[^)"\s]*bible=\d{8}(?:-\d{8})?(?:&[^)"\s]*)?)/;
+
 export default class JWLibraryLinkerPlugin extends Plugin {
   settings: LinkReplacerSettings = DEFAULT_SETTINGS;
 
@@ -128,11 +132,8 @@ export default class JWLibraryLinkerPlugin extends Plugin {
                 },
               })),
             });
-
             new Notice(
-              this.t('notices.convertedBibleReferences', {
-                count: String(changes.length),
-              }),
+              this.t('notices.convertedBibleReferences', { count: String(changes.length) }),
             );
           } else {
             new Notice(this.t(error || 'notices.noBibleReferencesFound'));
@@ -173,11 +174,7 @@ export default class JWLibraryLinkerPlugin extends Plugin {
           const selectionRange = editor.listSelections()[0];
           const startLine = Math.min(selectionRange.anchor.line, selectionRange.head.line);
           const endLine = Math.max(selectionRange.anchor.line, selectionRange.head.line);
-          contentSelection = {
-            text: selection,
-            startLine,
-            endLine,
-          };
+          contentSelection = { text: selection, startLine, endLine };
         }
 
         try {
@@ -245,8 +242,8 @@ export default class JWLibraryLinkerPlugin extends Plugin {
         const cursor = editor.getCursor();
         const line = editor.getLine(cursor.line);
 
-        const jwLibraryRegex = /jwlibrary:\/\/\/finder\?bible=\d{8}(?:-\d{8})?(?:&[^)\s]*)?/;
-        if (jwLibraryRegex.test(line)) {
+        // Updated regex: matches both jwlibrary:// and jw.org/finder links
+        if (ANY_BIBLE_LINK_REGEX.test(line)) {
           menu.addItem((item) => {
             item
               .setTitle(this.t('contextMenu.insertBibleQuote'))
@@ -270,59 +267,4 @@ export default class JWLibraryLinkerPlugin extends Plugin {
                 } catch (error: unknown) {
                   logger.error(
                     'Error inserting Bible quote from context menu:',
-                    error instanceof Error ? error.message : String(error),
-                  );
-                  new Notice(this.t('notices.errorInsertingQuotes'));
-                }
-              });
-          });
-        }
-      }),
-    );
-
-    logger.log('Plugin loaded');
-  }
-
-  getTranslationService(): TranslationService {
-    return this.translationService;
-  }
-
-  getBibleCitationProvider(): ConfiguredBibleCitationProvider {
-    return this.bibleCitationProvider;
-  }
-
-  getOfflineBibleRepository(): VaultOfflineBibleRepository {
-    return this.offlineBibleRepository;
-  }
-
-  getEpubImportService(): BibleEpubImportService {
-    return this.epubImportService;
-  }
-
-  async loadSettings() {
-    const savedData = (await this.loadData()) as LinkReplacerSettings;
-    this.settings = {
-      ...DEFAULT_SETTINGS,
-      ...savedData,
-      bibleQuote: {
-        ...DEFAULT_SETTINGS.bibleQuote,
-        ...savedData?.bibleQuote,
-      },
-      offlineBible: {
-        ...DEFAULT_SETTINGS.offlineBible,
-        ...savedData?.offlineBible,
-      },
-    };
-
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any -- migration from old settings format
-    const oldFormat = (this.settings.bibleQuote as any).format as BibleQuoteFormat | undefined;
-    if (oldFormat && !this.settings.bibleQuote.template) {
-      this.settings.bibleQuote.template = migrateFormatToTemplate(oldFormat);
-      await this.saveSettings();
-    }
-  }
-
-  async saveSettings() {
-    await this.saveData(this.settings);
-  }
-}
+                 
