@@ -138,7 +138,6 @@ export class JWLibraryLinkerSettings extends PluginSettingTab {
           }),
       );
 
-    // Link format toggle
     new Setting(settingsContainer)
       .setName('Link format')
       .setDesc(
@@ -167,6 +166,22 @@ export class JWLibraryLinkerSettings extends PluginSettingTab {
           this.plugin.settings.openAutomatically = value;
           await this.plugin.saveSettings();
         }),
+      );
+
+    new Setting(settingsContainer)
+      .setName('Insert quote automatically')
+      .setDesc(
+        'When a Bible reference is converted to a link, automatically insert the quote ' +
+        'beneath it using your configured quote template. Requires an internet connection ' +
+        'or an installed offline Bible.',
+      )
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.insertQuoteAutomatically ?? false)
+          .onChange(async (value) => {
+            this.plugin.settings.insertQuoteAutomatically = value;
+            await this.plugin.saveSettings();
+          }),
       );
 
     new Setting(settingsContainer)
@@ -481,7 +496,7 @@ export class JWLibraryLinkerSettings extends PluginSettingTab {
       .addTextArea((text) => {
         text
           .setValue(this.plugin.settings.bibleQuote.template)
-          .setPlaceholder('{bibleRefLinked}\\n> {quote}')
+          .setPlaceholder('{bibleRefLinked}\n> {quote}')
           .onChange(async (value) => {
             this.plugin.settings.bibleQuote.template = value;
             await this.plugin.saveSettings();
