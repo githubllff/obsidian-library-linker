@@ -31,12 +31,21 @@ function parseSingleBibleCode(code: string): BibleReference | null {
   };
 }
 
-export function parseJWLibraryLink(url: string): BibleReference | null {
-  // Parse jwlibrary:///finder?bible={bookChapterVerse} format
-  const match = url.match(/jwlibrary:\/\/\/finder\?bible=(\d{8}(?:-\d{8})?)(?:&|$)/);
-  if (!match) return null;
+function extractBibleCode(url: string): string | null {
+  // Match jwlibrary:///finder?bible=XXXXXXXX
+  const jwLibraryMatch = url.match(/jwlibrary:\/\/\/finder\?bible=(\d{8}(?:-\d{8})?)(?:&|$)/);
+  if (jwLibraryMatch) return jwLibraryMatch[1];
 
-  const bibleCode = match[1];
+  // Match https://www.jw.org/finder?...bible=XXXXXXXX...
+  const jwOrgMatch = url.match(/jw\.org\/finder\?[^)"\s]*bible=(\d{8}(?:-\d{8})?)(?:&|$)/);
+  if (jwOrgMatch) return jwOrgMatch[1];
+
+  return null;
+}
+
+export function parseJWLibraryLink(url: string): BibleReference | null {
+  const bibleCode = extractBibleCode(url);
+  if (!bibleCode) return null;
 
   // Handle range format (e.g., 40005003-40005005)
   if (bibleCode.includes('-')) {
@@ -67,7 +76,6 @@ export function findJWLibraryLinks(
 ): JWLibraryLinkInfo[] {
   const links: JWLibraryLinkInfo[] = [];
 
-  // Determine which lines to search
   const startLine = selection ? selection.startLine : 0;
   const endLine = selection ? Math.min(selection.endLine, editor.lastLine()) : editor.lastLine();
 
@@ -81,7 +89,11 @@ export function findJWLibraryLinks(
 
 export function findJWLibraryLinksInLine(line: string, lineNumber: number): JWLibraryLinkInfo[] {
   const links: JWLibraryLinkInfo[] = [];
-  const jwLibraryRegex = /jwlibrary:\/\/\/finder\?bible=\d{8}(?:-\d{8})?(?:&[^)\s]*)?/g;
+
+  // Matches both jwlibrary:///finder?bible=... and https://www.jw.org/finder?...bible=...
+  const jwLibraryRegex =
+    /(?:jwlibrary:\/\/\/finder\?bible=\d{8}(?:-\d{8})?(?:&[^)"\s]*)?|https:\/\/www\.jw\.org\/finder\?[^)"\s]*bible=\d{8}(?:-\d{8})?(?:&[^)"\s]*)?)/g;
+
   const matches = Array.from(line.matchAll(jwLibraryRegex));
 
   for (const match of matches) {
