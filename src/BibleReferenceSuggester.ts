@@ -64,14 +64,8 @@ export class BibleReferenceSuggester extends EditorSuggest<BibleSuggestion> {
 
         if (!line.includes(TRIGGER) && !isAlreadyLinked) {
           return {
-            start: {
-              ch: matchStart,
-              line: cursor.line,
-            },
-            end: {
-              ch: matchEnd,
-              line: cursor.line,
-            },
+            start: { ch: matchStart, line: cursor.line },
+            end: { ch: matchEnd, line: cursor.line },
             query: result.text,
           };
         }
@@ -88,14 +82,8 @@ export class BibleReferenceSuggester extends EditorSuggest<BibleSuggestion> {
     const afterCommand = line.slice(commandIndex + trigger.length);
     if (afterCommand.length > 0) {
       return {
-        start: {
-          ch: commandIndex,
-          line: cursor.line,
-        },
-        end: {
-          ch: line.length,
-          line: cursor.line,
-        },
+        start: { ch: commandIndex, line: cursor.line },
+        end: { ch: line.length, line: cursor.line },
         query: afterCommand.trim(),
       };
     }
@@ -105,7 +93,6 @@ export class BibleReferenceSuggester extends EditorSuggest<BibleSuggestion> {
 
   getSuggestions(context: EditorSuggestContext): BibleSuggestion[] {
     const query = context.query;
-
     const isExplicitMode = query.includes(TRIGGER);
 
     if (query.length === 0 && isExplicitMode) {
@@ -153,31 +140,45 @@ export class BibleReferenceSuggester extends EditorSuggest<BibleSuggestion> {
     const links = formatJWLibraryLink(reference, this.plugin.settings.language);
     const hasMultipleLinks = Array.isArray(links) && links.length > 1;
 
-    const suggestions: BibleSuggestion[] = [
-      {
-        text: query,
-        command: 'link',
-        description: hasMultipleLinks
-          ? this.t('suggestions.createLinks', { text: formattedText })
-          : this.t('suggestions.createLink', { text: formattedText }),
-      },
-    ];
+    // Build the three suggestions
+    const linkSuggestion: BibleSuggestion = {
+      text: query,
+      command: 'link',
+      description: hasMultipleLinks
+        ? this.t('suggestions.createLinks', { text: formattedText })
+        : this.t('suggestions.createLink', { text: formattedText }),
+    };
 
-    if (hasMultipleLinks) {
-      suggestions.push({
-        text: query,
-        command: 'open',
-        description: this.t('suggestions.createMultipleAndOpenFirst', { text: formattedText }),
-      });
-    } else {
-      suggestions.push({
-        text: query,
-        command: 'open',
-        description: this.t('suggestions.createAndOpen', { text: formattedText }),
-      });
-    }
+    const openSuggestion: BibleSuggestion = {
+      text: query,
+      command: 'open',
+      description: hasMultipleLinks
+        ? this.t('suggestions.createMultipleAndOpenFirst', { text: formattedText })
+        : this.t('suggestions.createAndOpen', { text: formattedText }),
+    };
+
+    const quoteSuggestion: BibleSuggestion = {
+      text: query,
+      command: 'linkAndQuote',
+      description: hasMultipleLinks
+        ? `Create links & insert quote for ${formattedText}`
+        : `Create link & insert quote for ${formattedText}`,
+    };
+
+    // Default order: link, open, linkAndQuote
+    const suggestions: BibleSuggestion[] = [linkSuggestion, openSuggestion, quoteSuggestion];
+
+    // If openAutomatically is on, move open to the top
     if (this.plugin.settings.openAutomatically) {
-      suggestions.unshift(suggestions.pop()!);
+      suggestions.splice(suggestions.indexOf(openSuggestion), 1);
+      suggestions.unshift(openSuggestion);
+    }
+
+    // If insertQuoteAutomatically is on, move linkAndQuote to the top
+    // (takes priority over openAutomatically if both are on)
+    if (this.plugin.settings.insertQuoteAutomatically) {
+      suggestions.splice(suggestions.indexOf(quoteSuggestion), 1);
+      suggestions.unshift(quoteSuggestion);
     }
 
     return suggestions;
@@ -210,7 +211,6 @@ export class BibleReferenceSuggester extends EditorSuggest<BibleSuggestion> {
     // Force close the suggestion box
     this.close();
 
-    // Handle opening links
     if (suggestion.command === 'open') {
       const url = formatJWLibraryLink(reference, linkLanguage);
       if (Array.isArray(url)) {
@@ -220,9 +220,8 @@ export class BibleReferenceSuggester extends EditorSuggest<BibleSuggestion> {
       }
     }
 
-    // Auto-insert the Bible quote beneath the link if enabled
-    if (this.plugin.settings.insertQuoteAutomatically) {
-      // Use a short delay so the editor has finished processing the link insertion
+    if (suggestion.command === 'linkAndQuote') {
+      // Insert quote after a short delay so the editor finishes placing the link first
       setTimeout(() => {
         void this.plugin.insertBibleQuoteForReference(editor, reference);
       }, 100);
