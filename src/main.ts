@@ -15,7 +15,7 @@ import { JWLibraryLinkerSettings } from '@/JWLibraryLinkerSettings';
 import { BibleReferenceSuggester } from '@/BibleReferenceSuggester';
 import { linkUnlinkedBibleReferences } from '@/utils/linkUnlinkedBibleReferences';
 import { ConvertSuggester } from '@/ConvertSuggester';
-import { insertAllBibleQuotes, insertBibleQuoteAtCursor } from '@/utils/insertBibleQuotes';
+import { insertAllBibleQuotes, insertBibleQuoteAtCursor, generateBibleQuoteText } from '@/utils/insertBibleQuotes';
 import { logger } from '@/utils/logger';
 import { getBookLanguage } from '@/utils/signLanguage';
 import { ContentSelection } from '@/utils/findJWLibraryLinks';
@@ -297,30 +297,41 @@ export default class JWLibraryLinkerPlugin extends Plugin {
   }
 
   /**
-   * Fetches and inserts the Bible quote for a given reference at the current
-   * cursor position in the editor, using the configured quote template.
-   * Called by both the command palette and the auto-insert feature in
-   * BibleReferenceSuggester when insertQuoteAutomatically is enabled.
+   * Fetches and inserts a Bible quote for the given reference directly after
+   * the current cursor line. Uses generateBibleQuoteText with the already-parsed
+   * reference object so no editor line scanning is needed — avoids timing issues
+   * when called immediately after replaceRange in BibleReferenceSuggester.
    */
   public async insertBibleQuoteForReference(
     editor: Editor,
-    _reference: BibleReference,
+    reference: BibleReference,
   ): Promise<void> {
     try {
-      const result = await insertBibleQuoteAtCursor(
-        editor,
+      const quoteText = await generateBibleQuoteText(
+        { reference },
         this.settings,
         this.bibleCitationProvider,
       );
-      if (result.inserted) {
-        new Notice(this.t('notices.bibleQuoteInsertedAtCursor'));
-      } else if (result.alreadyExists) {
-        // Silently skip — the quote is already there
-      } else if (result.fetchFailed) {
+
+      if (!quoteText) {
         new Notice(this.t('notices.bibleQuoteFetchFailed'));
+        return;
       }
-      // No notice for noBibleLinkAtCursor — the link was just inserted so
-      // this would only happen if the cursor moved unexpectedly.
+
+      const cursor = editor.getCursor();
+      const currentLine = editor.getLine(cursor.line);
+
+      editor.transaction({
+        changes: [
+          {
+            from: { line: cursor.line, ch: currentLine.length },
+            to: { line: cursor.line, ch: currentLine.length },
+            text: '\n' + quoteText,
+          },
+        ],
+      });
+
+      new Notice(this.t('notices.bibleQuoteInsertedAtCursor'));
     } catch (error: unknown) {
       logger.error(
         'Error auto-inserting Bible quote:',
