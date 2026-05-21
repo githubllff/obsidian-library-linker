@@ -32,6 +32,9 @@ jobs:
     - name: Install dependencies
       run: pnpm install
     
+    - name: Fix formatting
+      run: pnpm test:lint-fix
+    
     - name: Run build
       run: pnpm build
     
