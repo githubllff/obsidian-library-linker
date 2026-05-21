@@ -1,0 +1,11 @@
+build:
+  image: node:20
+  script:
+    - npm install
+    - npm run build
+  artifacts:
+    paths:
+      - main.js
+    expire_in: 7 days
+  only:
+    - main
