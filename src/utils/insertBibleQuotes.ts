@@ -1,7 +1,7 @@
 import { Editor } from 'obsidian';
 import { convertBibleTextToMarkdownLink } from '@/utils/convertBibleTextToMarkdownLink';
 import { formatBibleText } from '@/utils/formatBibleText';
-import type { BibleCitationProvider, LinkReplacerSettings } from '@/types';
+import type { BibleCitationProvider, BibleReference, LinkReplacerSettings } from '@/types';
 import {
   findJWLibraryLinks,
   findJWLibraryLinksInLine,
@@ -20,33 +20,27 @@ function processTemplate(
     quote: string;
   },
 ): string {
-  // Only use the quote part of the template — strip the {bibleRefLinked} line
-  // since the reference already exists in the note
   return template
     .replace(/\{bibleRef\}/g, variables.bibleRef.trim())
     .replace(/\{bibleRefLinked\}/g, variables.bibleRefLinked.trim())
     .replace(/\{quote\}/g, variables.quote.trim());
 }
 
-/**
- * Given a full template output, strip the first line if it only contains
- * the bibleRef or bibleRefLinked (since the link already exists in the note).
- * This prevents duplicating the reference.
- */
 function stripReferenceLine(templateOutput: string, bibleRefLinked: string, bibleRef: string): string {
   const lines = templateOutput.split('\n');
   const firstLine = lines[0].trim();
-
-  // If the first line is just the reference link, remove it
   if (firstLine === bibleRefLinked.trim() || firstLine === bibleRef.trim()) {
     return lines.slice(1).join('\n');
   }
-
   return templateOutput;
 }
 
-async function generateBibleQuoteText(
-  linkInfo: JWLibraryLinkInfo,
+/**
+ * Exported so callers that already have a BibleReference can generate the
+ * quote text directly without needing to re-scan the editor for a link URL.
+ */
+export async function generateBibleQuoteText(
+  linkInfo: JWLibraryLinkInfo | { reference: BibleReference },
   settings: LinkReplacerSettings,
   provider: BibleCitationProvider,
 ): Promise<string | null> {
@@ -75,7 +69,6 @@ async function generateBibleQuoteText(
       quote: result.text,
     });
 
-    // Remove the reference line from the output — it already exists in the note
     return stripReferenceLine(fullOutput, bibleRefLinked, bibleRef);
   } catch (error: unknown) {
     logger.error(
@@ -88,10 +81,8 @@ async function generateBibleQuoteText(
 
 /**
  * Finds the character position immediately after a given URL within a line of markdown.
- * Handles both [text](url) markdown links and bare URLs.
  */
 function findEndOfLinkInLine(line: string, url: string): number {
-  // Look for markdown link pattern [text](url)
   const escapedUrl = url.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const markdownLinkRegex = new RegExp(`\\[[^\\]]*\\]\\(${escapedUrl}[^)]*\\)`);
   const match = line.match(markdownLinkRegex);
@@ -100,13 +91,11 @@ function findEndOfLinkInLine(line: string, url: string): number {
     return match.index + match[0].length;
   }
 
-  // Fallback: find bare URL
   const urlIndex = line.indexOf(url);
   if (urlIndex !== -1) {
     return urlIndex + url.length;
   }
 
-  // Last resort: end of line
   return line.length;
 }
 
@@ -139,7 +128,6 @@ export async function insertAllBibleQuotes(
   let skippedAlreadyQuoted = 0;
   let fetchFailed = 0;
 
-  // Process in reverse order to preserve line/character positions
   for (let i = links.length - 1; i >= 0; i--) {
     const linkInfo = links[i];
 
@@ -149,7 +137,6 @@ export async function insertAllBibleQuotes(
     const nextLine =
       linkInfo.lineNumber < editor.lastLine() ? editor.getLine(linkInfo.lineNumber + 1) : '';
 
-    // Skip if a quote block already follows this line
     if (nextLine && nextLine.trim().startsWith('>')) {
       skippedAlreadyQuoted++;
       logger.log(`Skipping line ${linkInfo.lineNumber} — already has quote below`);
@@ -159,13 +146,9 @@ export async function insertAllBibleQuotes(
     try {
       const quoteText = await generateBibleQuoteText(linkInfo, settings, provider);
       if (quoteText) {
-        // Find exactly where the link ends in the line
         const insertAt = findEndOfLinkInLine(currentLine, linkInfo.url);
-
-        // Get text before and after the link on the same line
         const textAfterLink = currentLine.substring(insertAt);
 
-        // Build insertion: newline + quote + any text that was after the link
         let insertion = '\n' + quoteText;
         if (textAfterLink.trim()) {
           insertion += '\n' + textAfterLink.trim();
@@ -214,7 +197,6 @@ export async function insertBibleQuoteAtCursor(
   const currentLine = editor.getLine(cursorLine);
   const nextLine = cursorLine < editor.lastLine() ? editor.getLine(cursorLine + 1) : '';
 
-  // Skip if quote already exists below
   if (nextLine && nextLine.trim().startsWith('>')) {
     return { inserted: false, alreadyExists: true, fetchFailed: false };
   }
@@ -244,7 +226,6 @@ export async function insertBibleQuoteAtCursor(
     return { inserted: false, alreadyExists: false, fetchFailed: false };
   }
 
-  // Use the last link on the line as the insertion point
   const lastLink = linksOnTargetLine[linksOnTargetLine.length - 1];
   const insertAt = findEndOfLinkInLine(targetLineText, lastLink.url);
   const textAfterLink = targetLineText.substring(insertAt);
