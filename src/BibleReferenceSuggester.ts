@@ -42,9 +42,6 @@ export class BibleReferenceSuggester extends EditorSuggest<BibleSuggestion> {
   onTrigger(cursor: EditorPosition, editor: Editor): EditorSuggestTriggerInfo | null {
     const line = editor.getLine(cursor.line);
 
-    /**
-     * Silent mode: If there is a complete reference, show it as a suggestion
-     */
     const match = line.match(BIBLE_REFERENCE_REGEX) || line.match(this.getBookRegex());
 
     if (match?.[0]) {
@@ -72,9 +69,6 @@ export class BibleReferenceSuggester extends EditorSuggest<BibleSuggestion> {
       }
     }
 
-    /**
-     * Command mode: If there is a /b, show detailed suggestions
-     */
     const trigger = TRIGGER;
     const commandIndex = line.lastIndexOf(trigger);
     if (commandIndex === -1) return null;
@@ -140,7 +134,6 @@ export class BibleReferenceSuggester extends EditorSuggest<BibleSuggestion> {
     const links = formatJWLibraryLink(reference, this.plugin.settings.language);
     const hasMultipleLinks = Array.isArray(links) && links.length > 1;
 
-    // Build the three suggestions
     const linkSuggestion: BibleSuggestion = {
       text: query,
       command: 'link',
@@ -168,14 +161,13 @@ export class BibleReferenceSuggester extends EditorSuggest<BibleSuggestion> {
     // Default order: link, open, linkAndQuote
     const suggestions: BibleSuggestion[] = [linkSuggestion, openSuggestion, quoteSuggestion];
 
-    // If openAutomatically is on, move open to the top
+    // openAutomatically floats open to top
     if (this.plugin.settings.openAutomatically) {
       suggestions.splice(suggestions.indexOf(openSuggestion), 1);
       suggestions.unshift(openSuggestion);
     }
 
-    // If insertQuoteAutomatically is on, move linkAndQuote to the top
-    // (takes priority over openAutomatically if both are on)
+    // insertQuoteAutomatically floats linkAndQuote to top (takes priority)
     if (this.plugin.settings.insertQuoteAutomatically) {
       suggestions.splice(suggestions.indexOf(quoteSuggestion), 1);
       suggestions.unshift(quoteSuggestion);
@@ -205,10 +197,7 @@ export class BibleReferenceSuggester extends EditorSuggest<BibleSuggestion> {
       return;
     }
 
-    // Replace the typed reference with the markdown link
     editor.replaceRange(convertedLink, context.start, context.end);
-
-    // Force close the suggestion box
     this.close();
 
     if (suggestion.command === 'open') {
@@ -221,10 +210,10 @@ export class BibleReferenceSuggester extends EditorSuggest<BibleSuggestion> {
     }
 
     if (suggestion.command === 'linkAndQuote') {
-      // Insert quote after a short delay so the editor finishes placing the link first
-      setTimeout(() => {
-        void this.plugin.insertBibleQuoteForReference(editor, reference);
-      }, 100);
+      // No setTimeout needed — we pass the reference directly so no editor
+      // line scanning is required. The quote fetch is async and inserts
+      // at end-of-line once the citation comes back.
+      void this.plugin.insertBibleQuoteForReference(editor, reference);
     }
   }
 }
