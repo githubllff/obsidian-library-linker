@@ -175,13 +175,33 @@ export class BibleReferenceSuggester extends EditorSuggest<BibleSuggestion> {
     let order: BibleSuggestion[];
 
     if (quoteAutoOn && openAutoOn) {
-      order = [linkQuoteOpenSuggestion, linkQuoteSuggestion, linkOpenSuggestion, linkOnlySuggestion];
+      order = [
+        linkQuoteOpenSuggestion,
+        linkQuoteSuggestion,
+        linkOpenSuggestion,
+        linkOnlySuggestion,
+      ];
     } else if (quoteAutoOn) {
-      order = [linkQuoteSuggestion, linkQuoteOpenSuggestion, linkOpenSuggestion, linkOnlySuggestion];
+      order = [
+        linkQuoteSuggestion,
+        linkQuoteOpenSuggestion,
+        linkOpenSuggestion,
+        linkOnlySuggestion,
+      ];
     } else if (openAutoOn) {
-      order = [linkOpenSuggestion, linkQuoteOpenSuggestion, linkQuoteSuggestion, linkOnlySuggestion];
+      order = [
+        linkOpenSuggestion,
+        linkQuoteOpenSuggestion,
+        linkQuoteSuggestion,
+        linkOnlySuggestion,
+      ];
     } else {
-      order = [linkOnlySuggestion, linkQuoteOpenSuggestion, linkQuoteSuggestion, linkOpenSuggestion];
+      order = [
+        linkOnlySuggestion,
+        linkQuoteOpenSuggestion,
+        linkQuoteSuggestion,
+        linkOpenSuggestion,
+      ];
     }
 
     return order;
