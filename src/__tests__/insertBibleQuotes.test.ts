@@ -252,7 +252,7 @@ describe('insertAllBibleQuotes', () => {
     settings.bibleQuote.template = '> ***{bibleRefLinked}***\n> *{quote}*';
 
     mockLastLine.mockReturnValue(0);
-    const lineText = '[John 3:16](jwlibrary:///finder?bible=43003016) ';
+    const lineText = '[John 3:16](jwlibrary:///finder?bible=43003016)';
     mockGetLine.mockReturnValue(lineText);
 
     (findJWLibraryLinks as jest.Mock).mockReturnValue([
