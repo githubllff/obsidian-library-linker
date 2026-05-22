@@ -32,8 +32,8 @@ jobs:
     - name: Install dependencies
       run: pnpm install
     
-    - name: Fix formatting
-      run: pnpm test:lint-fix
+    - name: Fix formatting with Prettier
+      run: npx prettier --write "src/**/*.{ts,tsx,js,jsx}"
     
     - name: Run build
       run: pnpm build
@@ -42,5 +42,5 @@ jobs:
       if: github.event_name == 'push'
       uses: stefanzweifel/git-auto-commit-action@v5
       with:
-        commit_message: "chore: update build artifacts"
-        file_pattern: "main.js manifest.json"
+        commit_message: "chore: update build artifacts and formatting"
+        file_pattern: "src/ main.js manifest.json"
