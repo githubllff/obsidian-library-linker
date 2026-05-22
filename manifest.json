@@ -1,7 +1,7 @@
 {
   "id": "jw-library-linker-lukes",
   "name": "JW Library Linker Lukes",
-  "version": "2.00",
+  "version": "2.1",
   "minAppVersion": "1.7.2",
   "description": "Converts JW Library references to actual links in JW Library.",
   "author": "Luke Farr",
