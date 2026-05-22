@@ -133,16 +133,25 @@ export class BibleReferenceSuggester extends EditorSuggest<BibleSuggestion> {
 
     const links = formatJWLibraryLink(reference, this.plugin.settings.language);
     const hasMultipleLinks = Array.isArray(links) && links.length > 1;
+    const ref = hasMultipleLinks ? `${formattedText} (multiple)` : formattedText;
 
-    const linkSuggestion: BibleSuggestion = {
+    const openAutoOn = this.plugin.settings.openAutomatically;
+    const quoteAutoOn = this.plugin.settings.insertQuoteAutomatically;
+
+    // All four options always available
+    const linkQuoteOpenSuggestion: BibleSuggestion = {
       text: query,
-      command: 'link',
-      description: hasMultipleLinks
-        ? this.t('suggestions.createLinks', { text: formattedText })
-        : this.t('suggestions.createLink', { text: formattedText }),
+      command: 'linkAndQuoteAndOpen',
+      description: `Create link, insert quote & open ${ref}`,
     };
 
-    const openSuggestion: BibleSuggestion = {
+    const linkQuoteSuggestion: BibleSuggestion = {
+      text: query,
+      command: 'linkAndQuote',
+      description: `Create link & insert quote for ${ref}`,
+    };
+
+    const linkOpenSuggestion: BibleSuggestion = {
       text: query,
       command: 'open',
       description: hasMultipleLinks
@@ -150,30 +159,32 @@ export class BibleReferenceSuggester extends EditorSuggest<BibleSuggestion> {
         : this.t('suggestions.createAndOpen', { text: formattedText }),
     };
 
-    const quoteSuggestion: BibleSuggestion = {
+    const linkOnlySuggestion: BibleSuggestion = {
       text: query,
-      command: 'linkAndQuote',
+      command: 'link',
       description: hasMultipleLinks
-        ? `Create links & insert quote for ${formattedText}`
-        : `Create link & insert quote for ${formattedText}`,
+        ? this.t('suggestions.createLinks', { text: formattedText })
+        : this.t('suggestions.createLink', { text: formattedText }),
     };
 
-    // Default order: link, open, linkAndQuote
-    const suggestions: BibleSuggestion[] = [linkSuggestion, openSuggestion, quoteSuggestion];
+    // Determine top suggestion based on settings toggles
+    // Both on  → link + quote + open at top
+    // Quote only → link + quote at top
+    // Open only  → link + open at top
+    // Neither    → link only at top
+    let order: BibleSuggestion[];
 
-    // openAutomatically floats open to top
-    if (this.plugin.settings.openAutomatically) {
-      suggestions.splice(suggestions.indexOf(openSuggestion), 1);
-      suggestions.unshift(openSuggestion);
+    if (quoteAutoOn && openAutoOn) {
+      order = [linkQuoteOpenSuggestion, linkQuoteSuggestion, linkOpenSuggestion, linkOnlySuggestion];
+    } else if (quoteAutoOn) {
+      order = [linkQuoteSuggestion, linkQuoteOpenSuggestion, linkOpenSuggestion, linkOnlySuggestion];
+    } else if (openAutoOn) {
+      order = [linkOpenSuggestion, linkQuoteOpenSuggestion, linkQuoteSuggestion, linkOnlySuggestion];
+    } else {
+      order = [linkOnlySuggestion, linkQuoteOpenSuggestion, linkQuoteSuggestion, linkOpenSuggestion];
     }
 
-    // insertQuoteAutomatically floats linkAndQuote to top (takes priority)
-    if (this.plugin.settings.insertQuoteAutomatically) {
-      suggestions.splice(suggestions.indexOf(quoteSuggestion), 1);
-      suggestions.unshift(quoteSuggestion);
-    }
-
-    return suggestions;
+    return order;
   }
 
   renderSuggestion(suggestion: BibleSuggestion, el: HTMLElement): void {
@@ -210,10 +221,17 @@ export class BibleReferenceSuggester extends EditorSuggest<BibleSuggestion> {
     }
 
     if (suggestion.command === 'linkAndQuote') {
-      // No setTimeout needed — we pass the reference directly so no editor
-      // line scanning is required. The quote fetch is async and inserts
-      // at end-of-line once the citation comes back.
       void this.plugin.insertBibleQuoteForReference(editor, reference);
+    }
+
+    if (suggestion.command === 'linkAndQuoteAndOpen') {
+      void this.plugin.insertBibleQuoteForReference(editor, reference);
+      const url = formatJWLibraryLink(reference, linkLanguage);
+      if (Array.isArray(url)) {
+        window.open(url[suggestion.linkIndex || 0]);
+      } else {
+        window.open(url);
+      }
     }
   }
 }
