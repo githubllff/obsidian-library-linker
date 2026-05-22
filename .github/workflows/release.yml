@@ -32,7 +32,9 @@ jobs:
           version: 11.1.2
 
       - name: Install dependencies
-        run: pnpm install
+        run: pnpm install --ignore-scripts
+        env:
+          npm_config_ignore_scripts: "true"
 
       - name: Update version in manifest.json
         run: |
@@ -55,10 +57,14 @@ jobs:
           cp styles.css release-assets/ 2>/dev/null || true
           cd release-assets && zip -r ../obsidian-library-linker-${{ github.event.inputs.version }}.zip . && cd ..
 
-      - name: Commit version bump
+      - name: Configure git
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
+          git config --local core.hooksPath ""
+
+      - name: Commit version bump
+        run: |
           git add manifest.json package.json
           git commit -m "chore: bump version to ${{ github.event.inputs.version }}" --no-verify
 
@@ -70,8 +76,6 @@ jobs:
         run: |
           git push origin main
           git push origin ${{ github.event.inputs.version }}
-        env:
-          HUSKY: 0
 
       - name: Generate release notes
         id: release_notes
