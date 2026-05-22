@@ -86,5 +86,28 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: ${{ github.event.inputs.version }}
-          release_name: Release ${{ github.
-
+          release_name: Release ${{ github.event.inputs.version }}
+          body: |
+            ## Obsidian Library Linker v${{ github.event.inputs.version }}
+            
+            ### Files Included
+            - `main.js` - Plugin main file
+            - `manifest.json` - Plugin manifest
+            - `styles.css` - Plugin styles (if applicable)
+            
+            ### Installation
+            Extract the contents of `obsidian-library-linker-${{ github.event.inputs.version }}.zip` to your Obsidian plugins folder.
+            
+            ${{ steps.release_notes.outputs.release_body }}
+          draft: false
+          prerelease: false
+
+      - name: Upload Release Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./obsidian-library-linker-${{ github.event.inputs.version }}.zip
+          asset_name: obsidian-library-linker-${{ github.event.inputs.version }}.zip
+          asset_content_type: application/zip
