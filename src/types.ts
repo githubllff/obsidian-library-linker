@@ -154,7 +154,7 @@ export interface EpubImportService {
 
 export interface BibleSuggestion {
   text: string;
-  command: 'formatBook' | 'link' | 'open' | 'linkAndQuote' | 'typing';
+  command: 'formatBook' | 'link' | 'open' | 'linkAndQuote' | 'linkAndQuoteAndOpen' | 'typing';
   description: string;
   linkIndex?: number;
 }
