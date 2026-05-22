@@ -142,7 +142,7 @@ export class JWLibraryLinkerSettings extends PluginSettingTab {
       .setName('Link format')
       .setDesc(
         '"JW Library app" opens directly in the JW Library app (jwlibrary://). ' +
-        '"JW.org share link" also works in browsers and is better for sharing notes with others.',
+          '"JW.org share link" also works in browsers and is better for sharing notes with others.',
       )
       .addDropdown((dropdown) =>
         dropdown
@@ -172,8 +172,8 @@ export class JWLibraryLinkerSettings extends PluginSettingTab {
       .setName('Insert quote automatically')
       .setDesc(
         'When a Bible reference is converted to a link, automatically insert the quote ' +
-        'beneath it using your configured quote template. Requires an internet connection ' +
-        'or an installed offline Bible.',
+          'beneath it using your configured quote template. Requires an internet connection ' +
+          'or an installed offline Bible.',
       )
       .addToggle((toggle) =>
         toggle

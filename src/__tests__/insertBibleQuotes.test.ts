@@ -447,8 +447,7 @@ describe('insertBibleQuoteAtCursor', () => {
         {
           from: { line: 0, ch: lines[0].length },
           to: { line: 0, ch: lines[0].length },
-          text:
-            '\n> And this good news of the Kingdom will be preached in all the inhabited earth.',
+          text: '\n> And this good news of the Kingdom will be preached in all the inhabited earth.',
         },
       ],
     });

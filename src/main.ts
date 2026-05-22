@@ -15,7 +15,11 @@ import { JWLibraryLinkerSettings } from '@/JWLibraryLinkerSettings';
 import { BibleReferenceSuggester } from '@/BibleReferenceSuggester';
 import { linkUnlinkedBibleReferences } from '@/utils/linkUnlinkedBibleReferences';
 import { ConvertSuggester } from '@/ConvertSuggester';
-import { insertAllBibleQuotes, insertBibleQuoteAtCursor, generateBibleQuoteText } from '@/utils/insertBibleQuotes';
+import {
+  insertAllBibleQuotes,
+  insertBibleQuoteAtCursor,
+  generateBibleQuoteText,
+} from '@/utils/insertBibleQuotes';
 import { logger } from '@/utils/logger';
 import { getBookLanguage } from '@/utils/signLanguage';
 import { ContentSelection } from '@/utils/findJWLibraryLinks';

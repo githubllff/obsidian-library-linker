@@ -26,7 +26,11 @@ function processTemplate(
     .replace(/\{quote\}/g, variables.quote.trim());
 }
 
-function stripReferenceLine(templateOutput: string, bibleRefLinked: string, bibleRef: string): string {
+function stripReferenceLine(
+  templateOutput: string,
+  bibleRefLinked: string,
+  bibleRef: string,
+): string {
   const lines = templateOutput.split('\n');
   const firstLine = lines[0].trim();
   if (firstLine === bibleRefLinked.trim() || firstLine === bibleRef.trim()) {
@@ -234,7 +238,11 @@ export async function insertBibleQuoteAtCursor(
   for (const linkInfo of linksOnTargetLine) {
     const reference = parseJWLibraryLink(linkInfo.url);
     if (reference) {
-      const quoteText = await generateBibleQuoteText({ ...linkInfo, reference }, settings, provider);
+      const quoteText = await generateBibleQuoteText(
+        { ...linkInfo, reference },
+        settings,
+        provider,
+      );
       if (quoteText) {
         quoteTexts.push(quoteText);
       }
