@@ -69,15 +69,16 @@ describe('insertAllBibleQuotes', () => {
   });
 
   test('should insert Bible quote for single link', async () => {
+    const lineText = '[John 3:16](jwlibrary:///finder?bible=43003016)';
     mockLastLine.mockReturnValue(0);
-    mockGetLine.mockReturnValue('jwlibrary:///finder?bible=43003016');
+    mockGetLine.mockReturnValue(lineText);
 
     (findJWLibraryLinks as jest.Mock).mockReturnValue([
       {
         url: 'jwlibrary:///finder?bible=43003016',
         reference: { book: 43, chapter: 3, verseRanges: [{ start: 16, end: 16 }] },
         lineNumber: 0,
-        lineText: 'jwlibrary:///finder?bible=43003016',
+        lineText,
       },
     ]);
 
@@ -87,9 +88,9 @@ describe('insertAllBibleQuotes', () => {
     expect(mockTransaction).toHaveBeenCalledWith({
       changes: [
         {
-          from: { line: 0, ch: 0 },
-          to: { line: 0, ch: 'jwlibrary:///finder?bible=43003016'.length },
-          text: '[John 3:16](jwlibrary:///finder?bible=43003016&wtlocale=E)\n> For God loved the world so much that he gave his only-begotten Son.',
+          from: { line: 0, ch: lineText.length },
+          to: { line: 0, ch: lineText.length },
+          text: '\n[John 3:16](jwlibrary:///finder?bible=43003016&wtlocale=E)\n> For God loved the world so much that he gave his only-begotten Son.',
         },
       ],
     });
@@ -98,15 +99,16 @@ describe('insertAllBibleQuotes', () => {
   test('should format quote as long-foldable callout', async () => {
     settings.bibleQuote.template = BIBLE_QUOTE_TEMPLATES.foldable;
 
+    const lineText = '[John 3:16](jwlibrary:///finder?bible=43003016)';
     mockLastLine.mockReturnValue(0);
-    mockGetLine.mockReturnValue('jwlibrary:///finder?bible=43003016');
+    mockGetLine.mockReturnValue(lineText);
 
     (findJWLibraryLinks as jest.Mock).mockReturnValue([
       {
         url: 'jwlibrary:///finder?bible=43003016',
         reference: { book: 43, chapter: 3, verseRanges: [{ start: 16, end: 16 }] },
         lineNumber: 0,
-        lineText: 'jwlibrary:///finder?bible=43003016',
+        lineText,
       },
     ]);
 
@@ -115,9 +117,9 @@ describe('insertAllBibleQuotes', () => {
     expect(mockTransaction).toHaveBeenCalledWith({
       changes: [
         {
-          from: { line: 0, ch: 0 },
-          to: { line: 0, ch: 'jwlibrary:///finder?bible=43003016'.length },
-          text: '> [!quote]- [John 3:16](jwlibrary:///finder?bible=43003016&wtlocale=E)\n> For God loved the world so much that he gave his only-begotten Son.',
+          from: { line: 0, ch: lineText.length },
+          to: { line: 0, ch: lineText.length },
+          text: '\n> [!quote]- [John 3:16](jwlibrary:///finder?bible=43003016&wtlocale=E)\n> For God loved the world so much that he gave his only-begotten Son.',
         },
       ],
     });
@@ -126,15 +128,16 @@ describe('insertAllBibleQuotes', () => {
   test('should format quote as long-expanded callout', async () => {
     settings.bibleQuote.template = BIBLE_QUOTE_TEMPLATES.expanded;
 
+    const lineText = '[John 3:16](jwlibrary:///finder?bible=43003016)';
     mockLastLine.mockReturnValue(0);
-    mockGetLine.mockReturnValue('jwlibrary:///finder?bible=43003016');
+    mockGetLine.mockReturnValue(lineText);
 
     (findJWLibraryLinks as jest.Mock).mockReturnValue([
       {
         url: 'jwlibrary:///finder?bible=43003016',
         reference: { book: 43, chapter: 3, verseRanges: [{ start: 16, end: 16 }] },
         lineNumber: 0,
-        lineText: 'jwlibrary:///finder?bible=43003016',
+        lineText,
       },
     ]);
 
@@ -143,9 +146,9 @@ describe('insertAllBibleQuotes', () => {
     expect(mockTransaction).toHaveBeenCalledWith({
       changes: [
         {
-          from: { line: 0, ch: 0 },
-          to: { line: 0, ch: 'jwlibrary:///finder?bible=43003016'.length },
-          text: '> [!quote] [John 3:16](jwlibrary:///finder?bible=43003016&wtlocale=E)\n> For God loved the world so much that he gave his only-begotten Son.',
+          from: { line: 0, ch: lineText.length },
+          to: { line: 0, ch: lineText.length },
+          text: '\n> [!quote] [John 3:16](jwlibrary:///finder?bible=43003016&wtlocale=E)\n> For God loved the world so much that he gave his only-begotten Son.',
         },
       ],
     });
@@ -174,9 +177,9 @@ describe('insertAllBibleQuotes', () => {
   test('should handle multiple links', async () => {
     mockLastLine.mockReturnValue(2);
     const lines = [
-      'jwlibrary:///finder?bible=43003016',
+      '[John 3:16](jwlibrary:///finder?bible=43003016)',
       'Some text',
-      'jwlibrary:///finder?bible=40005003',
+      '[Matt. 5:3](jwlibrary:///finder?bible=40005003)',
     ];
     mockGetLine.mockImplementation((line: number) => lines[line]);
 
@@ -185,13 +188,13 @@ describe('insertAllBibleQuotes', () => {
         url: 'jwlibrary:///finder?bible=43003016',
         reference: { book: 43, chapter: 3, verseRanges: [{ start: 16, end: 16 }] },
         lineNumber: 0,
-        lineText: 'jwlibrary:///finder?bible=43003016',
+        lineText: '[John 3:16](jwlibrary:///finder?bible=43003016)',
       },
       {
         url: 'jwlibrary:///finder?bible=40005003',
         reference: { book: 40, chapter: 5, verseRanges: [{ start: 3, end: 3 }] },
         lineNumber: 2,
-        lineText: 'jwlibrary:///finder?bible=40005003',
+        lineText: '[Matt. 5:3](jwlibrary:///finder?bible=40005003)',
       },
     ]);
 
@@ -219,14 +222,15 @@ describe('insertAllBibleQuotes', () => {
 
   test('should handle fetch failure gracefully', async () => {
     mockLastLine.mockReturnValue(0);
-    mockGetLine.mockReturnValue('jwlibrary:///finder?bible=43003016');
+    const lineText = '[John 3:16](jwlibrary:///finder?bible=43003016)';
+    mockGetLine.mockReturnValue(lineText);
 
     (findJWLibraryLinks as jest.Mock).mockReturnValue([
       {
         url: 'jwlibrary:///finder?bible=43003016',
         reference: { book: 43, chapter: 3, verseRanges: [{ start: 16, end: 16 }] },
         lineNumber: 0,
-        lineText: 'jwlibrary:///finder?bible=43003016',
+        lineText,
       },
     ]);
 
@@ -248,14 +252,15 @@ describe('insertAllBibleQuotes', () => {
     settings.bibleQuote.template = '> ***{bibleRefLinked}***\n> *{quote}*';
 
     mockLastLine.mockReturnValue(0);
-    mockGetLine.mockReturnValue('jwlibrary:///finder?bible=43003016');
+    const lineText = '[John 3:16](jwlibrary:///finder?bible=43003016) ';
+    mockGetLine.mockReturnValue(lineText);
 
     (findJWLibraryLinks as jest.Mock).mockReturnValue([
       {
         url: 'jwlibrary:///finder?bible=43003016',
         reference: { book: 43, chapter: 3, verseRanges: [{ start: 16, end: 16 }] },
         lineNumber: 0,
-        lineText: 'jwlibrary:///finder?bible=43003016',
+        lineText,
       },
     ]);
 
@@ -275,9 +280,9 @@ describe('insertAllBibleQuotes', () => {
     expect(mockTransaction).toHaveBeenCalledWith({
       changes: [
         {
-          from: { line: 0, ch: 0 },
-          to: { line: 0, ch: 'jwlibrary:///finder?bible=43003016'.length },
-          text: '> ***[John 3:16](jwlibrary:///finder?bible=43003016&wtlocale=E)***\n> *For God loved the world so much that he gave his only-begotten Son.*',
+          from: { line: 0, ch: lineText.length },
+          to: { line: 0, ch: lineText.length },
+          text: '\n> ***[John 3:16](jwlibrary:///finder?bible=43003016&wtlocale=E)***\n> *For God loved the world so much that he gave his only-begotten Son.*',
         },
       ],
     });
@@ -332,7 +337,8 @@ describe('insertBibleQuoteAtCursor', () => {
   test('should insert quote at cursor line', async () => {
     mockGetCursor.mockReturnValue({ line: 0, ch: 10 });
     mockLastLine.mockReturnValue(0);
-    mockGetLine.mockReturnValue('jwlibrary:///finder?bible=43003016');
+    const lineText = '[John 3:16](jwlibrary:///finder?bible=43003016)';
+    mockGetLine.mockReturnValue(lineText);
 
     const result = await insertBibleQuoteAtCursor(mockEditor, settings, provider);
 
@@ -340,9 +346,9 @@ describe('insertBibleQuoteAtCursor', () => {
     expect(mockTransaction).toHaveBeenCalledWith({
       changes: [
         {
-          from: { line: 0, ch: 0 },
-          to: { line: 0, ch: 'jwlibrary:///finder?bible=43003016'.length },
-          text: '[John 3:16](jwlibrary:///finder?bible=43003016&wtlocale=E)\n> For God loved the world so much that he gave his only-begotten Son.',
+          from: { line: 0, ch: lineText.length },
+          to: { line: 0, ch: lineText.length },
+          text: '\n[John 3:16](jwlibrary:///finder?bible=43003016&wtlocale=E)\n> For God loved the world so much that he gave his only-begotten Son.',
         },
       ],
     });
@@ -384,9 +390,9 @@ describe('insertBibleQuoteAtCursor', () => {
   test('should insert quotes for all links on the same line', async () => {
     mockGetCursor.mockReturnValue({ line: 0, ch: 10 });
     mockLastLine.mockReturnValue(0);
-    mockGetLine.mockReturnValue(
-      'jwlibrary:///finder?bible=43003016 and jwlibrary:///finder?bible=40005003',
-    );
+    const lineText =
+      '[John 3:16](jwlibrary:///finder?bible=43003016) and [Matt. 5:3](jwlibrary:///finder?bible=40005003)';
+    mockGetLine.mockReturnValue(lineText);
 
     (BibleTextFetcher.fetchBibleText as jest.Mock)
       .mockResolvedValueOnce({
@@ -408,13 +414,10 @@ describe('insertBibleQuoteAtCursor', () => {
     expect(mockTransaction).toHaveBeenCalledWith({
       changes: [
         {
-          from: { line: 0, ch: 0 },
-          to: {
-            line: 0,
-            ch: 'jwlibrary:///finder?bible=43003016 and jwlibrary:///finder?bible=40005003'.length,
-          },
+          from: { line: 0, ch: lineText.length },
+          to: { line: 0, ch: lineText.length },
           text:
-            '[John 3:16](jwlibrary:///finder?bible=43003016&wtlocale=E)\n' +
+            '\n[John 3:16](jwlibrary:///finder?bible=43003016&wtlocale=E)\n' +
             '> For God loved the world so much that he gave his only-begotten Son.\n\n' +
             '[Matt. 5:3](jwlibrary:///finder?bible=40005003&wtlocale=E)\n' +
             '> Happy are those conscious of their spiritual need.',
@@ -426,7 +429,7 @@ describe('insertBibleQuoteAtCursor', () => {
   test('should fall back to the previous line when the cursor line has no link', async () => {
     mockGetCursor.mockReturnValue({ line: 1, ch: 0 });
     mockLastLine.mockReturnValue(1);
-    const lines = ['[Matt. 24:14](jwlibrary:///finder?bible=40024014&wtlocale=E)', ''];
+    const lines = ['[Matt. 24:14](jwlibrary:///finder?bible=40024014)', ''];
     mockGetLine.mockImplementation((line: number) => lines[line]);
 
     (BibleTextFetcher.fetchBibleText as jest.Mock).mockResolvedValueOnce({
@@ -444,13 +447,10 @@ describe('insertBibleQuoteAtCursor', () => {
     expect(mockTransaction).toHaveBeenCalledWith({
       changes: [
         {
-          from: { line: 0, ch: 0 },
-          to: {
-            line: 0,
-            ch: '[Matt. 24:14](jwlibrary:///finder?bible=40024014&wtlocale=E)'.length,
-          },
+          from: { line: 0, ch: lines[0].length },
+          to: { line: 0, ch: lines[0].length },
           text:
-            '[Matt. 24:14](jwlibrary:///finder?bible=40024014&wtlocale=E)\n' +
+            '\n[Matt. 24:14](jwlibrary:///finder?bible=40024014&wtlocale=E)\n' +
             '> And this good news of the Kingdom will be preached in all the inhabited earth.',
         },
       ],
