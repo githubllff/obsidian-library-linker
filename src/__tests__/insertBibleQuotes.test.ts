@@ -90,7 +90,7 @@ describe('insertAllBibleQuotes', () => {
         {
           from: { line: 0, ch: lineText.length },
           to: { line: 0, ch: lineText.length },
-          text: '\n[John 3:16](jwlibrary:///finder?bible=43003016&wtlocale=E)\n> For God loved the world so much that he gave his only-begotten Son.',
+          text: '\n> For God loved the world so much that he gave his only-begotten Son.',
         },
       ],
     });
@@ -348,7 +348,7 @@ describe('insertBibleQuoteAtCursor', () => {
         {
           from: { line: 0, ch: lineText.length },
           to: { line: 0, ch: lineText.length },
-          text: '\n[John 3:16](jwlibrary:///finder?bible=43003016&wtlocale=E)\n> For God loved the world so much that he gave his only-begotten Son.',
+          text: '\n> For God loved the world so much that he gave his only-begotten Son.',
         },
       ],
     });
@@ -417,9 +417,7 @@ describe('insertBibleQuoteAtCursor', () => {
           from: { line: 0, ch: lineText.length },
           to: { line: 0, ch: lineText.length },
           text:
-            '\n[John 3:16](jwlibrary:///finder?bible=43003016&wtlocale=E)\n' +
-            '> For God loved the world so much that he gave his only-begotten Son.\n\n' +
-            '[Matt. 5:3](jwlibrary:///finder?bible=40005003&wtlocale=E)\n' +
+            '\n> For God loved the world so much that he gave his only-begotten Son.\n\n' +
             '> Happy are those conscious of their spiritual need.',
         },
       ],
@@ -450,8 +448,7 @@ describe('insertBibleQuoteAtCursor', () => {
           from: { line: 0, ch: lines[0].length },
           to: { line: 0, ch: lines[0].length },
           text:
-            '\n[Matt. 24:14](jwlibrary:///finder?bible=40024014&wtlocale=E)\n' +
-            '> And this good news of the Kingdom will be preached in all the inhabited earth.',
+            '\n> And this good news of the Kingdom will be preached in all the inhabited earth.',
         },
       ],
     });
