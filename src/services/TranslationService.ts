@@ -77,7 +77,7 @@ type Translation = {
   };
   convertSuggester: {
     emptyStateText: string;
-    options: { all: string; bible: string; publication: string };
+    options: { all: string; bible: string; publication: string; jwshare: string };
   };
   contextMenu: { insertBibleQuote: string };
   notices: {
