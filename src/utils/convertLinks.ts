@@ -31,8 +31,19 @@ export function convertLinks(
       }
       // Handle publication references in jwshare format
       if (url.match(/^jwlibrary:\/\/\/finder\?wtlocale=\w+&docid=\d+/)) {
-        const convertedUrl = convertPublicationReference(`jwpub://p/${url.match(/wtlocale=(\w+)&docid=(\d+)/)![1]}:${url.match(/wtlocale=\w+&docid=(\d+)/)![1]}${url.includes('&par=') ? `/${url.match(/&par=(\d+)/)![1]}` : ''}`, 'jworg-finder');
-        return `[${text}](${convertedUrl})`;
+        const wtlocaleMatch = url.match(/wtlocale=(\w+)/);
+        const docidMatch = url.match(/docid=(\d+)/);
+        const parMatch = url.match(/par=(\d+)/);
+        
+        if (wtlocaleMatch && docidMatch) {
+          const locale = wtlocaleMatch[1];
+          const docid = docidMatch[1];
+          const paragraph = parMatch ? parMatch[1] : undefined;
+          
+          const jwpubUrl = `jwpub://p/${locale}:${docid}${paragraph ? `/${paragraph}` : ''}`;
+          const convertedUrl = convertPublicationReference(jwpubUrl, 'jworg-finder');
+          return `[${text}](${convertedUrl})`;
+        }
       }
       // Already in jw.org/finder format, leave unchanged
       return match;
