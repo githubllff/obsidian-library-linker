@@ -98,6 +98,7 @@ convertSuggester:
     all: All
     bible: Bible references
     publication: Publications
+    jwshare: JW Share links
 contextMenu:
   insertBibleQuote: Insert Bible quote
 notices:
