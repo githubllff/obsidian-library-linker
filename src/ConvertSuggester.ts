@@ -6,7 +6,7 @@ export class ConvertSuggester extends FuzzySuggestModal<string> {
   private plugin: JWLibraryLinkerPlugin;
   private t: (key: string, variables?: Record<string, string>) => string;
   private onChoose: (type: ConversionType) => void;
-  private convertTypes: ConversionType[] = ['all', 'bible', 'publication'];
+  private convertTypes: ConversionType[] = ['all', 'bible', 'publication', 'jwshare'];
 
   emptyStateText: string;
 
