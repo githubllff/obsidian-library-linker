@@ -102,251 +102,279 @@ export default class JWLibraryLinkerPlugin extends Plugin {
   private cachedBookRegexLanguage: string | null = null;
   private processingElements = new WeakSet<HTMLElement>();
 
-  private rerenderActiveReadingView = debounce(
-    () => {
-      const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-      if (!view) return;
+  private rerenderActiveReadingView = debounce(() => {
+    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+    if (!view) return;
 
-      const modeGetter = (view as unknown as { getMode?: () => string }).getMode;
-      const mode = typeof modeGetter === 'function' ? modeGetter.call(view) : null;
+    const modeGetter = (view as unknown as { getMode?: () => string }).getMode;
+    const mode = typeof modeGetter === 'function' ? modeGetter.call(view) : null;
 
-      if (mode !== 'preview') return;
+    if (mode !== 'preview') return;
 
-      try {
-        (
-          view as unknown as {
-            previewMode?: { rerender?: (full?: boolean) => void };
-          }
-        ).previewMode?.rerender?.(true);
-      } catch (error) {
-        logger.error('Failed to rerender reading view:', error);
-      }
-    },
-    250,
-    true,
-  );
+    try {
+      (
+        view as unknown as {
+          previewMode?: { rerender?: (full?: boolean) => void };
+        }
+      ).previewMode?.rerender?.(true);
+    } catch (error) {
+      logger.error('Failed to rerender reading view:', error);
+    }
+  }, 250, true);
 
   async onload() {
-    this.translationService = new TranslationService();
-    await this.translationService.initialize();
-    this.t = this.translationService.t.bind(this.translationService);
-    BibleTextFetcher.initialize(this.app);
+    try {
+      console.log('JWLL: onload start');
 
-    await this.loadSettings();
+      this.translationService = new TranslationService();
+      console.log('JWLL: translation service created');
 
-    const offlineBibleVaultPath = getOfflineBibleVaultPath(this.app, this.manifest.id);
-    this.offlineBibleRepository = new VaultOfflineBibleRepository(
-      this.app.vault.adapter,
-      offlineBibleVaultPath,
-    );
-    this.epubImportService = new BibleEpubImportService(this.offlineBibleRepository);
+      await this.translationService.initialize();
+      console.log('JWLL: translation initialized');
 
-    this.bibleCitationProvider = new ConfiguredBibleCitationProvider(
-      () => this.settings,
-      new OfflineBibleCitationProvider(this.offlineBibleRepository, this.t),
-      new OnlineBibleCitationProvider(),
-      this.t,
-    );
+      this.t = this.translationService.t.bind(this.translationService);
+      console.log('JWLL: translator bound');
 
-    loadBibleBooks(getBookLanguage(this.settings.language));
+      BibleTextFetcher.initialize(this.app);
+      console.log('JWLL: fetcher initialized');
 
-    this.addSettingTab(new JWLibraryLinkerSettings(this.app, this));
+      await this.loadSettings();
+      console.log('JWLL: settings loaded', this.settings);
 
-    this.registerMarkdownPostProcessor((element) => {
-      if (!this.settings.autoDetectReferences || !this.settings.autoDetectInReadingView) {
-        return;
-      }
-      this.processRenderedReferences(element);
-    });
+      const offlineBibleVaultPath = getOfflineBibleVaultPath(this.app, this.manifest.id);
+      console.log('JWLL: vault path', offlineBibleVaultPath);
 
-    this.registerEvent(
-      this.app.vault.on('modify', (file) => {
-        const activeFile = this.app.workspace.getActiveFile();
+      this.offlineBibleRepository = new VaultOfflineBibleRepository(
+        this.app.vault.adapter,
+        offlineBibleVaultPath,
+      );
+      console.log('JWLL: repository created');
 
-        if (!(file instanceof TFile) || !activeFile) return;
-        if (file.path !== activeFile.path) return;
-        if (!this.settings.autoDetectReferences || !this.settings.autoDetectInReadingView) return;
+      this.epubImportService = new BibleEpubImportService(this.offlineBibleRepository);
+      console.log('JWLL: epub import service created');
 
-        this.rerenderActiveReadingView();
-      }),
-    );
+      this.bibleCitationProvider = new ConfiguredBibleCitationProvider(
+        () => this.settings,
+        new OfflineBibleCitationProvider(this.offlineBibleRepository, this.t),
+        new OnlineBibleCitationProvider(),
+        this.t,
+      );
+      console.log('JWLL: citation provider created');
 
-    this.addCommand({
-      id: 'link-unlinked-bible-references',
-      name: this.t('commands.linkUnlinkedBibleReferences'),
-      icon: 'link-2',
-      editorCallback: (editor: Editor) => {
-        const selection = {
-          text: editor.getSelection(),
-          from: editor.getCursor('from'),
-          to: editor.getCursor('to'),
-        };
+      loadBibleBooks(getBookLanguage(this.settings.language));
+      console.log('JWLL: bible books loaded');
 
-        if (!selection.text) {
-          new Notice(this.t('notices.pleaseSelectText'));
+      this.addSettingTab(new JWLibraryLinkerSettings(this.app, this));
+      console.log('JWLL: settings tab added');
+
+      this.registerMarkdownPostProcessor((element) => {
+        if (!this.settings.autoDetectReferences || !this.settings.autoDetectInReadingView) {
           return;
         }
+        this.processRenderedReferences(element);
+      });
+      console.log('JWLL: markdown post processor registered');
 
-        linkUnlinkedBibleReferences(selection.text, this.settings, ({ changes, error }) => {
-          if (changes.length > 0) {
-            editor.transaction({
-              changes: changes.map((change) => ({
-                ...change,
-                from: {
-                  line: change.from.line + selection.from.line,
-                  ch: change.from.ch + selection.from.ch,
-                },
-                to: {
-                  line: change.to.line + selection.from.line,
-                  ch: change.to.ch + selection.from.ch,
-                },
-              })),
-            });
-            new Notice(
-              this.t('notices.convertedBibleReferences', { count: String(changes.length) }),
-            );
-          } else {
-            new Notice(this.t(error || 'notices.noBibleReferencesFound'));
+      this.registerEvent(
+        this.app.vault.on('modify', (file) => {
+          const activeFile = this.app.workspace.getActiveFile();
+
+          if (!(file instanceof TFile) || !activeFile) return;
+          if (file.path !== activeFile.path) return;
+          if (!this.settings.autoDetectReferences || !this.settings.autoDetectInReadingView) {
+            return;
           }
-        });
-      },
-    });
 
-    this.addCommand({
-      id: 'convert-jw-links',
-      name: this.t('commands.convertToJWLibraryLinks'),
-      icon: 'link-2',
-      editorCallback: (editor: Editor) => {
-        const selection = editor.getSelection();
-        if (!selection) {
-          new Notice(this.t('notices.pleaseSelectText'));
-          return;
-        }
+          this.rerenderActiveReadingView();
+        }),
+      );
+      console.log('JWLL: modify event registered');
 
-        new ConvertSuggester(this.app, this, (selectedType: ConversionType) => {
-          const convertedLinks = convertLinks(selection, selectedType, this.settings);
-          if (selection !== convertedLinks) {
-            editor.replaceSelection(convertedLinks);
+      this.addCommand({
+        id: 'link-unlinked-bible-references',
+        name: this.t('commands.linkUnlinkedBibleReferences'),
+        icon: 'link-2',
+        editorCallback: (editor: Editor) => {
+          const selection = {
+            text: editor.getSelection(),
+            from: editor.getCursor('from'),
+            to: editor.getCursor('to'),
+          };
+
+          if (!selection.text) {
+            new Notice(this.t('notices.pleaseSelectText'));
+            return;
           }
-        }).open();
-      },
-    });
 
-    this.addCommand({
-      id: 'insert-bible-quotes',
-      name: this.t('commands.insertBibleQuotes'),
-      icon: 'text-quote',
-      editorCallback: async (editor: Editor) => {
-        const selection = editor.getSelection();
-        let contentSelection: ContentSelection | undefined;
-
-        if (selection) {
-          const selectionRange = editor.listSelections()[0];
-          const startLine = Math.min(selectionRange.anchor.line, selectionRange.head.line);
-          const endLine = Math.max(selectionRange.anchor.line, selectionRange.head.line);
-          contentSelection = { text: selection, startLine, endLine };
-        }
-
-        try {
-          const result = await insertAllBibleQuotes(
-            editor,
-            this.settings,
-            this.bibleCitationProvider,
-            contentSelection,
-          );
-          if (result.inserted > 0) {
-            const notice = contentSelection
-              ? this.t('notices.bibleQuotesInsertedSelection')
-              : this.t('notices.bibleQuotesInserted');
-            new Notice(notice);
-          } else if (result.fetchFailed > 0) {
-            new Notice(this.t('notices.bibleQuoteFetchFailed'));
-          } else {
-            new Notice(this.t('notices.noBibleLinksFound'));
-          }
-        } catch (error: unknown) {
-          logger.error(
-            'Error inserting Bible quotes:',
-            error instanceof Error ? error.message : String(error),
-          );
-          new Notice(this.t('notices.errorInsertingQuotes'));
-        }
-      },
-    });
-
-    this.addCommand({
-      id: 'insert-bible-quote-at-cursor',
-      name: this.t('commands.insertBibleQuoteAtCursor'),
-      icon: 'text-quote',
-      editorCallback: async (editor: Editor) => {
-        try {
-          const result = await insertBibleQuoteAtCursor(
-            editor,
-            this.settings,
-            this.bibleCitationProvider,
-          );
-          if (result.inserted) {
-            new Notice(this.t('notices.bibleQuoteInsertedAtCursor'));
-          } else if (result.alreadyExists) {
-            new Notice(this.t('notices.bibleQuoteAlreadyExists'));
-          } else if (result.fetchFailed) {
-            new Notice(this.t('notices.bibleQuoteFetchFailed'));
-          } else {
-            new Notice(this.t('notices.noBibleLinkAtCursor'));
-          }
-        } catch (error: unknown) {
-          logger.error(
-            'Error inserting Bible quote at cursor:',
-            error instanceof Error ? error.message : String(error),
-          );
-          new Notice(this.t('notices.errorInsertingQuotes'));
-        }
-      },
-    });
-
-    this.bibleSuggester = new BibleReferenceSuggester(this);
-    this.registerEditorSuggest(this.bibleSuggester);
-
-    this.registerEvent(
-      this.app.workspace.on('editor-menu', (menu: Menu, editor: Editor) => {
-        const cursor = editor.getCursor();
-        const line = editor.getLine(cursor.line);
-
-        if (ANY_BIBLE_LINK_REGEX.test(line)) {
-          menu.addItem((item) => {
-            item
-              .setTitle(this.t('contextMenu.insertBibleQuote'))
-              .setIcon('quote-glyph')
-              .onClick(async () => {
-                try {
-                  const result = await insertBibleQuoteAtCursor(
-                    editor,
-                    this.settings,
-                    this.bibleCitationProvider,
-                  );
-                  if (result.inserted) {
-                    new Notice(this.t('notices.bibleQuoteInsertedAtCursor'));
-                  } else if (result.alreadyExists) {
-                    new Notice(this.t('notices.bibleQuoteAlreadyExists'));
-                  } else if (result.fetchFailed) {
-                    new Notice(this.t('notices.bibleQuoteFetchFailed'));
-                  } else {
-                    new Notice(this.t('notices.noBibleLinkAtCursor'));
-                  }
-                } catch (error: unknown) {
-                  logger.error(
-                    'Error inserting Bible quote from context menu:',
-                    error instanceof Error ? error.message : String(error),
-                  );
-                  new Notice(this.t('notices.errorInsertingQuotes'));
-                }
+          linkUnlinkedBibleReferences(selection.text, this.settings, ({ changes, error }) => {
+            if (changes.length > 0) {
+              editor.transaction({
+                changes: changes.map((change) => ({
+                  ...change,
+                  from: {
+                    line: change.from.line + selection.from.line,
+                    ch: change.from.ch + selection.from.ch,
+                  },
+                  to: {
+                    line: change.to.line + selection.from.line,
+                    ch: change.to.ch + selection.from.ch,
+                  },
+                })),
               });
+              new Notice(
+                this.t('notices.convertedBibleReferences', { count: String(changes.length) }),
+              );
+            } else {
+              new Notice(this.t(error || 'notices.noBibleReferencesFound'));
+            }
           });
-        }
-      }),
-    );
+        },
+      });
 
-    logger.log('Plugin loaded');
+      this.addCommand({
+        id: 'convert-jw-links',
+        name: this.t('commands.convertToJWLibraryLinks'),
+        icon: 'link-2',
+        editorCallback: (editor: Editor) => {
+          const selection = editor.getSelection();
+          if (!selection) {
+            new Notice(this.t('notices.pleaseSelectText'));
+            return;
+          }
+
+          new ConvertSuggester(this.app, this, (selectedType: ConversionType) => {
+            const convertedLinks = convertLinks(selection, selectedType, this.settings);
+            if (selection !== convertedLinks) {
+              editor.replaceSelection(convertedLinks);
+            }
+          }).open();
+        },
+      });
+
+      this.addCommand({
+        id: 'insert-bible-quotes',
+        name: this.t('commands.insertBibleQuotes'),
+        icon: 'text-quote',
+        editorCallback: async (editor: Editor) => {
+          const selection = editor.getSelection();
+          let contentSelection: ContentSelection | undefined;
+
+          if (selection) {
+            const selectionRange = editor.listSelections()[0];
+            const startLine = Math.min(selectionRange.anchor.line, selectionRange.head.line);
+            const endLine = Math.max(selectionRange.anchor.line, selectionRange.head.line);
+            contentSelection = { text: selection, startLine, endLine };
+          }
+
+          try {
+            const result = await insertAllBibleQuotes(
+              editor,
+              this.settings,
+              this.bibleCitationProvider,
+              contentSelection,
+            );
+            if (result.inserted > 0) {
+              const notice = contentSelection
+                ? this.t('notices.bibleQuotesInsertedSelection')
+                : this.t('notices.bibleQuotesInserted');
+              new Notice(notice);
+            } else if (result.fetchFailed > 0) {
+              new Notice(this.t('notices.bibleQuoteFetchFailed'));
+            } else {
+              new Notice(this.t('notices.noBibleLinksFound'));
+            }
+          } catch (error: unknown) {
+            logger.error(
+              'Error inserting Bible quotes:',
+              error instanceof Error ? error.message : String(error),
+            );
+            new Notice(this.t('notices.errorInsertingQuotes'));
+          }
+        },
+      });
+
+      this.addCommand({
+        id: 'insert-bible-quote-at-cursor',
+        name: this.t('commands.insertBibleQuoteAtCursor'),
+        icon: 'text-quote',
+        editorCallback: async (editor: Editor) => {
+          try {
+            const result = await insertBibleQuoteAtCursor(
+              editor,
+              this.settings,
+              this.bibleCitationProvider,
+            );
+            if (result.inserted) {
+              new Notice(this.t('notices.bibleQuoteInsertedAtCursor'));
+            } else if (result.alreadyExists) {
+              new Notice(this.t('notices.bibleQuoteAlreadyExists'));
+            } else if (result.fetchFailed) {
+              new Notice(this.t('notices.bibleQuoteFetchFailed'));
+            } else {
+              new Notice(this.t('notices.noBibleLinkAtCursor'));
+            }
+          } catch (error: unknown) {
+            logger.error(
+              'Error inserting Bible quote at cursor:',
+              error instanceof Error ? error.message : String(error),
+            );
+            new Notice(this.t('notices.errorInsertingQuotes'));
+          }
+        },
+      });
+      console.log('JWLL: commands added');
+
+      this.bibleSuggester = new BibleReferenceSuggester(this);
+      this.registerEditorSuggest(this.bibleSuggester);
+      console.log('JWLL: bible suggester registered');
+
+      this.registerEvent(
+        this.app.workspace.on('editor-menu', (menu: Menu, editor: Editor) => {
+          const cursor = editor.getCursor();
+          const line = editor.getLine(cursor.line);
+
+          if (ANY_BIBLE_LINK_REGEX.test(line)) {
+            menu.addItem((item) => {
+              item
+                .setTitle(this.t('contextMenu.insertBibleQuote'))
+                .setIcon('quote-glyph')
+                .onClick(async () => {
+                  try {
+                    const result = await insertBibleQuoteAtCursor(
+                      editor,
+                      this.settings,
+                      this.bibleCitationProvider,
+                    );
+                    if (result.inserted) {
+                      new Notice(this.t('notices.bibleQuoteInsertedAtCursor'));
+                    } else if (result.alreadyExists) {
+                      new Notice(this.t('notices.bibleQuoteAlreadyExists'));
+                    } else if (result.fetchFailed) {
+                      new Notice(this.t('notices.bibleQuoteFetchFailed'));
+                    } else {
+                      new Notice(this.t('notices.noBibleLinkAtCursor'));
+                    }
+                  } catch (error: unknown) {
+                    logger.error(
+                      'Error inserting Bible quote from context menu:',
+                      error instanceof Error ? error.message : String(error),
+                    );
+                    new Notice(this.t('notices.errorInsertingQuotes'));
+                  }
+                });
+            });
+          }
+        }),
+      );
+      console.log('JWLL: editor menu registered');
+
+      logger.log('Plugin loaded');
+      console.log('JWLL: onload complete');
+    } catch (error) {
+      console.error('JWLL: plugin failed during onload', error);
+      new Notice(`JW Library Linker failed to load: ${String(error)}`);
+      throw error;
+    }
   }
 
   getTranslationService(): TranslationService {
@@ -646,10 +674,7 @@ export default class JWLibraryLinkerPlugin extends Plugin {
     }
 
     try {
-      const result = await this.bibleCitationProvider.getCitation(
-        reference,
-        this.settings.language,
-      );
+      const result = await this.bibleCitationProvider.getCitation(reference, this.settings.language);
       const quoteText = result.success ? result.text : null;
 
       if (!quoteText) {
@@ -661,8 +686,12 @@ export default class JWLibraryLinkerPlugin extends Plugin {
         ? this.t('settings.offlineBible.enabled')
         : undefined;
 
-      new DetectedReferenceModal(this.app, matchedText, quoteText, sourceLabel, () =>
-        this.openDetectedReferenceExternally(reference),
+      new DetectedReferenceModal(
+        this.app,
+        matchedText,
+        quoteText,
+        sourceLabel,
+        () => this.openDetectedReferenceExternally(reference),
       ).open();
     } catch (error) {
       logger.error('Error handling detected reference click:', error);
