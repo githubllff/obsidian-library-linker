@@ -15,6 +15,7 @@ import type {
   BookLength,
   UpdatedLinkStructure,
   LinkFormat,
+  AutoDetectAction,
 } from '@/types';
 import { BIBLE_QUOTE_TEMPLATES } from '@/types';
 import { convertBibleTextToMarkdownLink } from '@/utils/convertBibleTextToMarkdownLink';
@@ -180,6 +181,51 @@ export class JWLibraryLinkerSettings extends PluginSettingTab {
           .setValue(this.plugin.settings.insertQuoteAutomatically ?? false)
           .onChange(async (value) => {
             this.plugin.settings.insertQuoteAutomatically = value;
+            await this.plugin.saveSettings();
+          }),
+      );
+
+    new Setting(settingsContainer)
+      .setName('Automatically detect Bible references')
+      .setDesc(
+        'Detect plain scripture references in Reading view and make them clickable without rewriting your note.',
+      )
+      .addToggle((toggle) =>
+        toggle.setValue(this.plugin.settings.autoDetectReferences).onChange(async (value) => {
+          this.plugin.settings.autoDetectReferences = value;
+          await this.plugin.saveSettings();
+          this.display();
+        }),
+      );
+
+    new Setting(settingsContainer)
+      .setName('Enable detection in Reading view')
+      .setDesc('Use Reading view rendering to turn plain references into interactive links.')
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.autoDetectInReadingView)
+          .setDisabled(!this.plugin.settings.autoDetectReferences)
+          .onChange(async (value) => {
+            this.plugin.settings.autoDetectInReadingView = value;
+            await this.plugin.saveSettings();
+          }),
+      );
+
+    new Setting(settingsContainer)
+      .setName('Detected reference click action')
+      .setDesc(
+        'Choose whether detected plain-text references open a popup preview or open directly in JW Library / JW.org.',
+      )
+      .addDropdown((dropdown) =>
+        dropdown
+          .addOptions({
+            popup: 'Popup preview',
+            open: 'Open directly',
+          })
+          .setValue(this.plugin.settings.autoDetectAction)
+          .setDisabled(!this.plugin.settings.autoDetectReferences)
+          .onChange(async (value) => {
+            this.plugin.settings.autoDetectAction = value as AutoDetectAction;
             await this.plugin.saveSettings();
           }),
       );
