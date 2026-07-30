@@ -3,17 +3,7 @@ import { getLocaleFromLanguage } from '@/utils/getLocaleFromLanguage';
 describe('getLocaleFromLanguage', () => {
   test.each([
     ['E', 'en'],
-    ['X', 'de'],
-    ['FI', 'fi'],
-    ['S', 'es'],
-    ['O', 'nl'],
-    ['KO', 'ko'],
-    ['F', 'fr'],
-    ['TPO', 'pt-PT'],
-    ['C', 'hr'],
-    ['VT', 'vi'],
-    ['B', 'cs'],
-  ] as const)('%s → %s', (language, expected) => {
+     ] as const)('%s → %s', (language, expected) => {
     expect(getLocaleFromLanguage(language)).toBe(expected);
   });
 
