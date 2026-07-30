@@ -80,6 +80,14 @@ function migrateFormatToTemplate(format: BibleQuoteFormat): string {
 const ANY_BIBLE_LINK_REGEX =
   /(?:jwlibrary:\/\/\/finder\?bible=\d{8}(?:-\d{8})?(?:&[^)\s]*)?|https:\/\/www\.jw\.org\/finder\?[^)"\s]*bible=\d{8}(?:-\d{8})?(?:&[^)"\s]*)?)/;
 
+type StoredSettings = Partial<LinkReplacerSettings> & {
+  bibleQuote?: {
+    template?: string;
+    format?: BibleQuoteFormat;
+  };
+  offlineBible?: Partial<LinkReplacerSettings['offlineBible']>;
+};
+
 export default class JWLibraryLinkerPlugin extends Plugin {
   settings: LinkReplacerSettings = DEFAULT_SETTINGS;
 
@@ -606,10 +614,11 @@ export default class JWLibraryLinkerPlugin extends Plugin {
       trigger.textContent = text.slice(match.start, match.end);
       trigger.className = 'jwll-detected-reference';
 
-      trigger.addEventListener('click', async (event) => {
+      trigger.addEventListener('click', (event) => {
         event.preventDefault();
         event.stopPropagation();
-        await this.handleDetectedReferenceClick(match.reference, trigger.textContent ?? '');
+
+        void this.handleDetectedReferenceClick(match.reference, trigger.textContent ?? '');
       });
 
       fragment.appendChild(trigger);
@@ -659,10 +668,11 @@ export default class JWLibraryLinkerPlugin extends Plugin {
   }
 
   async loadSettings() {
-    const loadedData = await this.loadData();
+    const loadedData = (await this.loadData()) as StoredSettings;
+
+    const savedBibleQuote = loadedData.bibleQuote;
 
     const migratedBibleQuote = (() => {
-      const savedBibleQuote = loadedData?.bibleQuote;
       if (!savedBibleQuote) {
         return DEFAULT_SETTINGS.bibleQuote;
       }
@@ -673,11 +683,9 @@ export default class JWLibraryLinkerPlugin extends Plugin {
         };
       }
 
-      if (typeof (savedBibleQuote as { format?: unknown }).format === 'string') {
+      if (typeof savedBibleQuote.format === 'string') {
         return {
-          template: migrateFormatToTemplate(
-            (savedBibleQuote as { format: BibleQuoteFormat }).format,
-          ),
+          template: migrateFormatToTemplate(savedBibleQuote.format),
         };
       }
 
@@ -690,7 +698,7 @@ export default class JWLibraryLinkerPlugin extends Plugin {
       bibleQuote: migratedBibleQuote,
       offlineBible: {
         ...DEFAULT_SETTINGS.offlineBible,
-        ...(loadedData?.offlineBible ?? {}),
+        ...(loadedData.offlineBible ?? {}),
       },
     };
   }
