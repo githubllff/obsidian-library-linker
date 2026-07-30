@@ -121,9 +121,7 @@ function normalizeOfflineBible(
 
   return {
     enabled:
-      typeof value.enabled === 'boolean'
-        ? value.enabled
-        : DEFAULT_SETTINGS.offlineBible.enabled,
+      typeof value.enabled === 'boolean' ? value.enabled : DEFAULT_SETTINGS.offlineBible.enabled,
     preferOffline:
       typeof value.preferOffline === 'boolean'
         ? value.preferOffline
@@ -149,25 +147,29 @@ export default class JWLibraryLinkerPlugin extends Plugin {
   private cachedBookRegexLanguage: string | null = null;
   private processingElements = new WeakSet<HTMLElement>();
 
-  private rerenderActiveReadingView = debounce(() => {
-    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-    if (!view) return;
+  private rerenderActiveReadingView = debounce(
+    () => {
+      const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+      if (!view) return;
 
-    const modeGetter = (view as unknown as { getMode?: () => string }).getMode;
-    const mode = typeof modeGetter === 'function' ? modeGetter.call(view) : null;
+      const modeGetter = (view as unknown as { getMode?: () => string }).getMode;
+      const mode = typeof modeGetter === 'function' ? modeGetter.call(view) : null;
 
-    if (mode !== 'preview') return;
+      if (mode !== 'preview') return;
 
-    try {
-      (
-        view as unknown as {
-          previewMode?: { rerender?: (full?: boolean) => void };
-        }
-      ).previewMode?.rerender?.(true);
-    } catch (error) {
-      logger.error('Failed to rerender reading view:', error);
-    }
-  }, 250, true);
+      try {
+        (
+          view as unknown as {
+            previewMode?: { rerender?: (full?: boolean) => void };
+          }
+        ).previewMode?.rerender?.(true);
+      } catch (error) {
+        logger.error('Failed to rerender reading view:', error);
+      }
+    },
+    250,
+    true,
+  );
 
   async onload() {
     try {
@@ -419,7 +421,9 @@ export default class JWLibraryLinkerPlugin extends Plugin {
       console.log('JWLL: onload complete');
     } catch (error) {
       console.error('JWLL: plugin failed during onload', error);
-      new Notice(`JW Library Linker failed to load: ${error instanceof Error ? error.message : String(error)}`);
+      new Notice(
+        `JW Library Linker failed to load: ${error instanceof Error ? error.message : String(error)}`,
+      );
       throw error;
     }
   }
@@ -725,7 +729,10 @@ export default class JWLibraryLinkerPlugin extends Plugin {
     }
 
     try {
-      const result = await this.bibleCitationProvider.getCitation(reference, this.settings.language);
+      const result = await this.bibleCitationProvider.getCitation(
+        reference,
+        this.settings.language,
+      );
       const quoteText = result.success ? result.text : null;
 
       if (!quoteText) {
@@ -737,12 +744,8 @@ export default class JWLibraryLinkerPlugin extends Plugin {
         ? this.t('settings.offlineBible.enabled')
         : undefined;
 
-      new DetectedReferenceModal(
-        this.app,
-        matchedText,
-        quoteText,
-        sourceLabel,
-        () => this.openDetectedReferenceExternally(reference),
+      new DetectedReferenceModal(this.app, matchedText, quoteText, sourceLabel, () =>
+        this.openDetectedReferenceExternally(reference),
       ).open();
     } catch (error) {
       logger.error('Error handling detected reference click:', error);
