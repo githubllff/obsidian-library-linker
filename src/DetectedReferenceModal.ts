@@ -1,4 +1,4 @@
-import { App, Modal } from 'obsidian';
+import { App, Modal, Setting } from 'obsidian';
 
 export class DetectedReferenceModal extends Modal {
   constructor(
@@ -6,6 +6,7 @@ export class DetectedReferenceModal extends Modal {
     private readonly titleText: string,
     private readonly bodyText: string,
     private readonly sourceLabel?: string,
+    private readonly onOpenExternal?: () => void,
   ) {
     super(app);
   }
@@ -26,6 +27,18 @@ export class DetectedReferenceModal extends Modal {
       text: this.bodyText,
       cls: 'jwll-detected-ref-body',
     });
+
+    if (this.onOpenExternal) {
+      new Setting(contentEl).addButton((button) =>
+        button
+          .setButtonText('Open in JW Library')
+          .setCta()
+          .onClick(() => {
+            this.onOpenExternal?.();
+            this.close();
+          }),
+      );
+    }
   }
 
   onClose(): void {
