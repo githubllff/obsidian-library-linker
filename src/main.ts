@@ -57,6 +57,4 @@ export const DEFAULT_SETTINGS: LinkReplacerSettings = {
     template: BIBLE_QUOTE_TEMPLATES.short,
   },
   offlineBible: {
-    enabled: true,
-    preferOffline: true,
-    allowOnlineFallback: true,
+    enabled: 
