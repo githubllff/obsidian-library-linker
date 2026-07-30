@@ -33,6 +33,8 @@ export type BibleQuoteFormat = 'short' | 'long-foldable' | 'long-expanded';
 
 export type LinkFormat = 'jwlibrary' | 'jworg-finder';
 
+export type AutoDetectAction = 'popup' | 'open';
+
 export const BIBLE_QUOTE_TEMPLATES = {
   short: '{bibleRefLinked}\n> {quote}',
   plain: '> {bibleRefLinked}\n> {quote}',
@@ -60,6 +62,10 @@ export interface LinkReplacerSettings extends LinkStyles {
   bibleQuote: BibleQuoteSettings;
   offlineBible: OfflineBibleSettings;
   insertQuoteAutomatically: boolean;
+
+  autoDetectReferences: boolean;
+  autoDetectInReadingView: boolean;
+  autoDetectAction: AutoDetectAction;
 }
 
 export interface BibleBook {
