@@ -34,12 +34,12 @@ export function convertLinks(
         const wtlocaleMatch = url.match(/wtlocale=(\w+)/);
         const docidMatch = url.match(/docid=(\d+)/);
         const parMatch = url.match(/par=(\d+)/);
-        
+
         if (wtlocaleMatch && docidMatch) {
           const locale = wtlocaleMatch[1];
           const docid = docidMatch[1];
           const paragraph = parMatch ? parMatch[1] : undefined;
-          
+
           const jwpubUrl = `jwpub://p/${locale}:${docid}${paragraph ? `/${paragraph}` : ''}`;
           const convertedUrl = convertPublicationReference(jwpubUrl, 'jworg-finder');
           return `[${text}](${convertedUrl})`;

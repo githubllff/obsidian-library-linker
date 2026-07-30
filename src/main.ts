@@ -329,7 +329,9 @@ export default class JWLibraryLinkerPlugin extends Plugin {
     return text.length === 0;
   }
 
-  private detectReferenceFromText(text: string): { reference: BibleReference; matchedText: string } | null {
+  private detectReferenceFromText(
+    text: string,
+  ): { reference: BibleReference; matchedText: string } | null {
     const regexMatches = text.match(BIBLE_REFERENCE_REGEX) || text.match(this.getBookRegex());
     if (!regexMatches?.[0]) return null;
 
@@ -362,7 +364,10 @@ export default class JWLibraryLinkerPlugin extends Plugin {
       reference: BibleReference;
     }> = [];
 
-    const patterns = [new RegExp(BIBLE_REFERENCE_REGEX.source, 'g'), new RegExp(this.getBookRegex().source, 'g')];
+    const patterns = [
+      new RegExp(BIBLE_REFERENCE_REGEX.source, 'g'),
+      new RegExp(this.getBookRegex().source, 'g'),
+    ];
 
     for (const pattern of patterns) {
       let match: RegExpExecArray | null;
@@ -480,24 +485,19 @@ export default class JWLibraryLinkerPlugin extends Plugin {
     const refText = formatBibleText(reference, this.settings.bookLength, this.settings.language);
 
     try {
-      const result = await this.bibleCitationProvider.getCitation(reference, this.settings.language);
+      const result = await this.bibleCitationProvider.getCitation(
+        reference,
+        this.settings.language,
+      );
 
       if (!result.success) {
         new Notice(result.error || this.t('notices.bibleQuoteFetchFailed'));
         return;
       }
 
-      const sourceLabel =
-        result.source === 'offline'
-          ? 'Offline Bible'
-          : 'Online Bible';
+      const sourceLabel = result.source === 'offline' ? 'Offline Bible' : 'Online Bible';
 
-      new DetectedReferenceModal(
-        this.app,
-        refText || matchedText,
-        result.text,
-        sourceLabel,
-      ).open();
+      new DetectedReferenceModal(this.app, refText || matchedText, result.text, sourceLabel).open();
     } catch (error: unknown) {
       logger.error(
         'Error opening detected Bible reference:',

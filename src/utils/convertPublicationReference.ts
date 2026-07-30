@@ -1,4 +1,7 @@
-export function convertPublicationReference(url: string, format: 'jwlibrary' | 'jworg-finder' = 'jwlibrary'): string {
+export function convertPublicationReference(
+  url: string,
+  format: 'jwlibrary' | 'jworg-finder' = 'jwlibrary',
+): string {
   const parts = url.split('/');
   const pubRef = parts[3];
   const [locale, docId] = pubRef.split(':');

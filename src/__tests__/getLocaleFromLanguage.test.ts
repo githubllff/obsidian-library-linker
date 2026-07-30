@@ -1,9 +1,7 @@
 import { getLocaleFromLanguage } from '@/utils/getLocaleFromLanguage';
 
 describe('getLocaleFromLanguage', () => {
-  test.each([
-    ['E', 'en'],
-     ] as const)('%s → %s', (language, expected) => {
+  test.each([['E', 'en']] as const)('%s → %s', (language, expected) => {
     expect(getLocaleFromLanguage(language)).toBe(expected);
   });
 
