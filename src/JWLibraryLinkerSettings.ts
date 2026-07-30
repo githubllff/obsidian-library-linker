@@ -1,11 +1,11 @@
-import { App, PluginSettingTab, Setting, Notice } from 'obsidian';
+import { App, Notice, PluginSettingTab, Setting } from 'obsidian';
 import type JWLibraryLinkerPlugin from '@/main';
 import type {
-  BookLength,
-  UpdatedLinkStructure,
-  LinkFormat,
   AutoDetectAction,
+  BookLength,
   Language,
+  LinkFormat,
+  UpdatedLinkStructure,
 } from '@/types';
 import { BIBLE_QUOTE_TEMPLATES } from '@/types';
 
@@ -25,9 +25,9 @@ export class JWLibraryLinkerSettings extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('Language')
-      .setDesc('Language used for Bible books, references, and online Bible lookups.')
+      .setDesc('Language used for Bible books, references, and Bible lookups.')
       .addText((text) =>
-        text.setValue(this.plugin.settings.language).onChange(async (value) => {
+        text.setPlaceholder('E').setValue(this.plugin.settings.language).onChange(async (value) => {
           this.plugin.settings.language = value as Language;
           await this.plugin.saveSettings();
         }),
@@ -157,7 +157,7 @@ export class JWLibraryLinkerSettings extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('Prefer offline Bible')
-      .setDesc('Prefer the offline Bible over online lookup when both are available.')
+      .setDesc('Prefer offline Bible over online lookup when both are available.')
       .addToggle((toggle) =>
         toggle
           .setValue(this.plugin.settings.offlineBible.preferOffline)
@@ -186,7 +186,7 @@ export class JWLibraryLinkerSettings extends PluginSettingTab {
       .setDesc('Import an EPUB Bible into the plugin’s offline library.')
       .addButton((button) =>
         button.setButtonText('Import EPUB').setCta().onClick(async () => {
-          new Notice('EPUB import command wiring can stay as your existing implementation.');
+          new Notice('Use your existing EPUB import flow here.');
         }),
       );
 
