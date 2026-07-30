@@ -21,11 +21,7 @@ import { JWLibraryLinkerSettings } from '@/JWLibraryLinkerSettings';
 import { BibleReferenceSuggester } from '@/BibleReferenceSuggester';
 import { linkUnlinkedBibleReferences } from '@/utils/linkUnlinkedBibleReferences';
 import { ConvertSuggester } from '@/ConvertSuggester';
-import {
-  insertAllBibleQuotes,
-  insertBibleQuoteAtCursor,
-  generateBibleQuoteText,
-} from '@/utils/insertBibleQuotes';
+import { insertAllBibleQuotes, insertBibleQuoteAtCursor } from '@/utils/insertBibleQuotes';
 import { logger } from '@/utils/logger';
 import { getBookLanguage } from '@/utils/signLanguage';
 import { ContentSelection } from '@/utils/findJWLibraryLinks';
@@ -345,14 +341,17 @@ export default class JWLibraryLinkerPlugin extends Plugin {
     return this.translationService;
   }
 
-  async insertBibleQuoteForReference(reference: BibleReference): Promise<string | null> {
+  async insertBibleQuoteForReference(
+    reference: BibleReference,
+    _matchedText?: string,
+  ): Promise<string | null> {
     const result = await this.bibleCitationProvider.getCitation(reference, this.settings.language);
 
     if (!result.success) {
       return null;
     }
 
-    return generateBibleQuoteText(result.text);
+    return result.text;
   }
 
   private getBookRegex(): RegExp {
@@ -634,7 +633,7 @@ export default class JWLibraryLinkerPlugin extends Plugin {
     }
 
     try {
-      const quoteText = await this.insertBibleQuoteForReference(reference);
+      const quoteText = await this.insertBibleQuoteForReference(reference, matchedText);
 
       if (!quoteText) {
         this.openDetectedReferenceExternally(reference);
