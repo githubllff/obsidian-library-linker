@@ -1,4 +1,4 @@
-import { Editor, Notice, Plugin, Menu } from 'obsidian';
+import { Editor, Notice, Plugin, Menu, MarkdownView, TFile, debounce } from 'obsidian';
 import { ConversionType, convertLinks } from '@/utils/convertLinks';
 import type {
   LinkReplacerSettings,
@@ -82,7 +82,6 @@ function migrateFormatToTemplate(format: BibleQuoteFormat): string {
   }
 }
 
-// Matches both jwlibrary:///finder?bible=... and jw.org/finder links
 const ANY_BIBLE_LINK_REGEX =
   /(?:jwlibrary:\/\/\/finder\?bible=\d{8}(?:-\d{8})?(?:&[^)\s]*)?|https:\/\/www\.jw\.org\/finder\?[^)"\s]*bible=\d{8}(?:-\d{8})?(?:&[^)"\s]*)?)/;
 
@@ -99,6 +98,26 @@ export default class JWLibraryLinkerPlugin extends Plugin {
   private cachedBookRegex: RegExp | null = null;
   private cachedBookRegexLanguage: string | null = null;
   private processingElements = new WeakSet<HTMLElement>();
+
+  private rerenderActiveReadingView = debounce(() => {
+    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+    if (!view) return;
+
+    const modeGetter = (view as unknown as { getMode?: () => string }).getMode;
+    const mode = typeof modeGetter === 'function' ? modeGetter.call(view) : null;
+
+    if (mode !== 'preview') return;
+
+    try {
+      (
+        view as unknown as {
+          previewMode?: { rerender?: (full?: boolean) => void };
+        }
+      ).previewMode?.rerender?.(true);
+    } catch (error) {
+      logger.error('Failed to rerender reading view:', error);
+    }
+  }, 250, true);
 
   async onload() {
     this.translationService = new TranslationService();
@@ -132,6 +151,18 @@ export default class JWLibraryLinkerPlugin extends Plugin {
       }
       this.processRenderedReferences(element);
     });
+
+    this.registerEvent(
+      this.app.vault.on('modify', (file) => {
+        const activeFile = this.app.workspace.getActiveFile();
+
+        if (!(file instanceof TFile) || !activeFile) return;
+        if (file.path !== activeFile.path) return;
+        if (!this.settings.autoDetectReferences || !this.settings.autoDetectInReadingView) return;
+
+        this.rerenderActiveReadingView();
+      }),
+    );
 
     this.addCommand({
       id: 'link-unlinked-bible-references',
@@ -358,16 +389,47 @@ export default class JWLibraryLinkerPlugin extends Plugin {
     }
   }
 
+  private detectWholeBookReference(
+    text: string,
+  ): { reference: BibleReference; matchedText: string } | null {
+    const trimmed = text.trim();
+
+    const forcedMatch = trimmed.match(/^\{\{([^}]+)\}\}$/u);
+    if (!forcedMatch) return null;
+
+    const candidate = forcedMatch[1].trim();
+
+    try {
+      const parsed = parseBibleReference(candidate, this.settings.language);
+      if (!parsed) return null;
+
+      const isWholeBook = parsed.chapter === 1 && !parsed.verseRanges?.length;
+      if (!isWholeBook) return null;
+
+      return {
+        reference: {
+          book: parsed.book,
+          chapter: 1,
+        },
+        matchedText: candidate,
+      };
+    } catch {
+      return null;
+    }
+  }
+
   private detectReferenceFromText(
     text: string,
   ): { reference: BibleReference; matchedText: string } | null {
     const matches = this.detectReferencesInText(text);
-    if (matches.length === 0) return null;
+    if (matches.length > 0) {
+      return {
+        reference: matches[0].reference,
+        matchedText: matches[0].matchedText,
+      };
+    }
 
-    return {
-      reference: matches[0].reference,
-      matchedText: matches[0].matchedText,
-    };
+    return this.detectWholeBookReference(text);
   }
 
   private detectReferencesInText(text: string): Array<{
@@ -384,6 +446,41 @@ export default class JWLibraryLinkerPlugin extends Plugin {
     }> = [];
 
     const seen = new Set<string>();
+
+    const forcedWholeBookRegex = /\{\{([^}]+)\}\}/gu;
+    let forcedMatch: RegExpExecArray | null;
+
+    while ((forcedMatch = forcedWholeBookRegex.exec(text)) !== null) {
+      const raw = forcedMatch[0];
+      const inner = forcedMatch[1].trim();
+
+      try {
+        const parsed = parseBibleReference(inner, this.settings.language);
+        if (!parsed) continue;
+
+        const isWholeBook = parsed.chapter === 1 && !parsed.verseRanges?.length;
+        if (!isWholeBook) continue;
+
+        const start = forcedMatch.index;
+        const end = start + raw.length;
+        const key = `${start}:${end}:${raw}`;
+
+        if (seen.has(key)) continue;
+        seen.add(key);
+
+        results.push({
+          start,
+          end,
+          matchedText: raw,
+          reference: {
+            book: parsed.book,
+            chapter: 1,
+          },
+        });
+      } catch {
+        continue;
+      }
+    }
 
     const patterns = [
       /\{\{[^}]+\}\}/gu,
@@ -485,152 +582,111 @@ export default class JWLibraryLinkerPlugin extends Plugin {
     if (matches.length === 0) return;
 
     const fragment = document.createDocumentFragment();
-    let cursor = 0;
+    let lastIndex = 0;
 
     for (const match of matches) {
-      if (match.start > cursor) {
-        fragment.appendChild(document.createTextNode(text.slice(cursor, match.start)));
+      if (match.start > lastIndex) {
+        fragment.appendChild(document.createTextNode(text.slice(lastIndex, match.start)));
       }
 
-      const anchor = document.createElement('a');
-      anchor.href = '#';
-      anchor.className = 'jwll-auto-detected-reference';
-      anchor.textContent = text.slice(match.start, match.end);
-      anchor.setAttribute('data-reference-text', match.matchedText);
-      anchor.addEventListener('click', (event) => {
-        void this.handleDetectedReferenceClick(event, match.reference, match.matchedText);
+      const trigger = document.createElement('a');
+      trigger.href = '#';
+      trigger.textContent = text.slice(match.start, match.end);
+      trigger.className = 'jwll-detected-reference';
+
+      trigger.addEventListener('click', async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        await this.handleDetectedReferenceClick(match.reference, trigger.textContent ?? '');
       });
 
-      fragment.appendChild(anchor);
-      cursor = match.end;
+      fragment.appendChild(trigger);
+      lastIndex = match.end;
     }
 
-    if (cursor < text.length) {
-      fragment.appendChild(document.createTextNode(text.slice(cursor)));
+    if (lastIndex < text.length) {
+      fragment.appendChild(document.createTextNode(text.slice(lastIndex)));
     }
 
     textNode.parentNode?.replaceChild(fragment, textNode);
   }
 
   private async handleDetectedReferenceClick(
-    event: MouseEvent,
     reference: BibleReference,
     matchedText: string,
   ): Promise<void> {
-    event.preventDefault();
-    event.stopPropagation();
-
     if (this.settings.autoDetectAction === 'open') {
       this.openDetectedReferenceExternally(reference);
       return;
     }
 
-    const refText = formatBibleText(reference, this.settings.bookLength, this.settings.language);
-
     try {
-      const result = await this.bibleCitationProvider.getCitation(
-        reference,
-        this.settings.language,
-      );
+      const result = await this.bibleCitationProvider.getCitation(reference, this.settings.language);
 
       if (!result.success) {
-        new Notice(result.error || this.t('notices.bibleQuoteFetchFailed'));
+        this.openDetectedReferenceExternally(reference);
         return;
       }
 
-      const sourceLabel = result.source === 'offline' ? 'Offline Bible' : 'Online Bible';
+      const linkedRef = formatBibleText(reference, this.settings, true);
+      const quoteText = generateBibleQuoteText(result.text);
+      const sourceLabel =
+        result.source === 'offline'
+          ? this.t('settings.offlineBible.enabled')
+          : this.t('settings.offlineBible.allowOnlineFallback');
 
-      new DetectedReferenceModal(this.app, refText || matchedText, result.text, sourceLabel, () =>
-        this.openDetectedReferenceExternally(reference),
+      new DetectedReferenceModal(
+        this.app,
+        linkedRef,
+        quoteText,
+        sourceLabel,
+        () => this.openDetectedReferenceExternally(reference),
       ).open();
-    } catch (error: unknown) {
-      logger.error(
-        'Error opening detected Bible reference:',
-        error instanceof Error ? error.message : String(error),
-      );
-      new Notice(this.t('notices.bibleQuoteFetchFailed'));
-    }
-  }
-
-  getTranslationService(): TranslationService {
-    return this.translationService;
-  }
-
-  getBibleCitationProvider(): ConfiguredBibleCitationProvider {
-    return this.bibleCitationProvider;
-  }
-
-  getOfflineBibleRepository(): VaultOfflineBibleRepository {
-    return this.offlineBibleRepository;
-  }
-
-  getEpubImportService(): BibleEpubImportService {
-    return this.epubImportService;
-  }
-
-  public async insertBibleQuoteForReference(
-    editor: Editor,
-    reference: BibleReference,
-  ): Promise<void> {
-    try {
-      const quoteText = await generateBibleQuoteText(
-        { reference },
-        this.settings,
-        this.bibleCitationProvider,
-      );
-
-      if (!quoteText) {
-        new Notice(this.t('notices.bibleQuoteFetchFailed'));
-        return;
-      }
-
-      const cursor = editor.getCursor();
-      const currentLine = editor.getLine(cursor.line);
-
-      editor.transaction({
-        changes: [
-          {
-            from: { line: cursor.line, ch: currentLine.length },
-            to: { line: cursor.line, ch: currentLine.length },
-            text: '\n' + quoteText,
-          },
-        ],
-      });
-
-      new Notice(this.t('notices.bibleQuoteInsertedAtCursor'));
-    } catch (error: unknown) {
-      logger.error(
-        'Error auto-inserting Bible quote:',
-        error instanceof Error ? error.message : String(error),
-      );
-      new Notice(this.t('notices.errorInsertingQuotes'));
+    } catch (error) {
+      logger.error('Error handling detected reference click:', error);
+      this.openDetectedReferenceExternally(reference);
     }
   }
 
   async loadSettings() {
-    const savedData = (await this.loadData()) as LinkReplacerSettings;
+    const loadedData = await this.loadData();
+
+    const migratedBibleQuote = (() => {
+      const savedBibleQuote = loadedData?.bibleQuote;
+      if (!savedBibleQuote) {
+        return DEFAULT_SETTINGS.bibleQuote;
+      }
+
+      if (typeof savedBibleQuote.template === 'string') {
+        return {
+          template: savedBibleQuote.template,
+        };
+      }
+
+      if (typeof savedBibleQuote.format === 'string') {
+        return {
+          template: migrateFormatToTemplate(savedBibleQuote.format as BibleQuoteFormat),
+        };
+      }
+
+      return DEFAULT_SETTINGS.bibleQuote;
+    })();
+
     this.settings = {
       ...DEFAULT_SETTINGS,
-      ...savedData,
-      bibleQuote: {
-        ...DEFAULT_SETTINGS.bibleQuote,
-        ...savedData?.bibleQuote,
-      },
+      ...loadedData,
+      bibleQuote: migratedBibleQuote,
       offlineBible: {
         ...DEFAULT_SETTINGS.offlineBible,
-        ...savedData?.offlineBible,
+        ...(loadedData?.offlineBible ?? {}),
       },
     };
-
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
-    const oldFormat = (this.settings.bibleQuote as any).format as BibleQuoteFormat | undefined;
-    if (oldFormat && !this.settings.bibleQuote.template) {
-      this.settings.bibleQuote.template = migrateFormatToTemplate(oldFormat);
-      await this.saveSettings();
-    }
   }
 
   async saveSettings() {
     await this.saveData(this.settings);
+    loadBibleBooks(getBookLanguage(this.settings.language));
+    this.cachedBookRegex = null;
+    this.cachedBookRegexLanguage = null;
   }
 }
