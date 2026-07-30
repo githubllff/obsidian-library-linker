@@ -57,4 +57,584 @@ export const DEFAULT_SETTINGS: LinkReplacerSettings = {
     template: BIBLE_QUOTE_TEMPLATES.short,
   },
   offlineBible: {
-    enabled: 
+    enabled: true,
+    preferOffline: true,
+    allowOnlineFallback: true,
+  },
+  autoDetectReferences: true,
+  autoDetectInReadingView: true,
+  autoDetectAction: 'popup',
+  autoDetectOpenUsesWebShareLink: true,
+  popupOpenButtonUsesWebShareLink: false,
+  ...DEFAULT_STYLES,
+};
+
+function migrateFormatToTemplate(format: BibleQuoteFormat): string {
+  switch (format) {
+    case 'short':
+      return BIBLE_QUOTE_TEMPLATES.short;
+    case 'long-foldable':
+      return BIBLE_QUOTE_TEMPLATES.foldable;
+    case 'long-expanded':
+      return BIBLE_QUOTE_TEMPLATES.expanded;
+    default:
+      return BIBLE_QUOTE_TEMPLATES.short;
+  }
+}
+
+// Matches both jwlibrary:///finder?bible=... and jw.org/finder links
+const ANY_BIBLE_LINK_REGEX =
+  /(?:jwlibrary:\/\/\/finder\?bible=\d{8}(?:-\d{8})?(?:&[^)\s]*)?|https:\/\/www\.jw\.org\/finder\?[^)"\s]*bible=\d{8}(?:-\d{8})?(?:&[^)"\s]*)?)/;
+
+export default class JWLibraryLinkerPlugin extends Plugin {
+  settings: LinkReplacerSettings = DEFAULT_SETTINGS;
+
+  private translationService!: TranslationService;
+  private bibleSuggester!: BibleReferenceSuggester;
+  private offlineBibleRepository!: VaultOfflineBibleRepository;
+  private bibleCitationProvider!: ConfiguredBibleCitationProvider;
+  private epubImportService!: BibleEpubImportService;
+
+  private t!: (key: string, variables?: Record<string, string>) => string;
+  private cachedBookRegex: RegExp | null = null;
+  private cachedBookRegexLanguage: string | null = null;
+  private processingElements = new WeakSet<HTMLElement>();
+
+  async onload() {
+    this.translationService = new TranslationService();
+    await this.translationService.initialize();
+    this.t = this.translationService.t.bind(this.translationService);
+    BibleTextFetcher.initialize(this.app);
+
+    await this.loadSettings();
+
+    const offlineBibleVaultPath = getOfflineBibleVaultPath(this.app, this.manifest.id);
+    this.offlineBibleRepository = new VaultOfflineBibleRepository(
+      this.app.vault.adapter,
+      offlineBibleVaultPath,
+    );
+    this.epubImportService = new BibleEpubImportService(this.offlineBibleRepository);
+
+    this.bibleCitationProvider = new ConfiguredBibleCitationProvider(
+      () => this.settings,
+      new OfflineBibleCitationProvider(this.offlineBibleRepository, this.t),
+      new OnlineBibleCitationProvider(),
+      this.t,
+    );
+
+    loadBibleBooks(getBookLanguage(this.settings.language));
+
+    this.addSettingTab(new JWLibraryLinkerSettings(this.app, this));
+
+    this.registerMarkdownPostProcessor((element) => {
+      if (!this.settings.autoDetectReferences || !this.settings.autoDetectInReadingView) {
+        return;
+      }
+      this.processRenderedReferences(element);
+    });
+
+    this.addCommand({
+      id: 'link-unlinked-bible-references',
+      name: this.t('commands.linkUnlinkedBibleReferences'),
+      icon: 'link-2',
+      editorCallback: (editor: Editor) => {
+        const selection = {
+          text: editor.getSelection(),
+          from: editor.getCursor('from'),
+          to: editor.getCursor('to'),
+        };
+
+        if (!selection.text) {
+          new Notice(this.t('notices.pleaseSelectText'));
+          return;
+        }
+
+        linkUnlinkedBibleReferences(selection.text, this.settings, ({ changes, error }) => {
+          if (changes.length > 0) {
+            editor.transaction({
+              changes: changes.map((change) => ({
+                ...change,
+                from: {
+                  line: change.from.line + selection.from.line,
+                  ch: change.from.ch + selection.from.ch,
+                },
+                to: {
+                  line: change.to.line + selection.from.line,
+                  ch: change.to.ch + selection.from.ch,
+                },
+              })),
+            });
+            new Notice(
+              this.t('notices.convertedBibleReferences', { count: String(changes.length) }),
+            );
+          } else {
+            new Notice(this.t(error || 'notices.noBibleReferencesFound'));
+          }
+        });
+      },
+    });
+
+    this.addCommand({
+      id: 'convert-jw-links',
+      name: this.t('commands.convertToJWLibraryLinks'),
+      icon: 'link-2',
+      editorCallback: (editor: Editor) => {
+        const selection = editor.getSelection();
+        if (!selection) {
+          new Notice(this.t('notices.pleaseSelectText'));
+          return;
+        }
+
+        new ConvertSuggester(this.app, this, (selectedType: ConversionType) => {
+          const convertedLinks = convertLinks(selection, selectedType, this.settings);
+          if (selection !== convertedLinks) {
+            editor.replaceSelection(convertedLinks);
+          }
+        }).open();
+      },
+    });
+
+    this.addCommand({
+      id: 'insert-bible-quotes',
+      name: this.t('commands.insertBibleQuotes'),
+      icon: 'text-quote',
+      editorCallback: async (editor: Editor) => {
+        const selection = editor.getSelection();
+        let contentSelection: ContentSelection | undefined;
+
+        if (selection) {
+          const selectionRange = editor.listSelections()[0];
+          const startLine = Math.min(selectionRange.anchor.line, selectionRange.head.line);
+          const endLine = Math.max(selectionRange.anchor.line, selectionRange.head.line);
+          contentSelection = { text: selection, startLine, endLine };
+        }
+
+        try {
+          const result = await insertAllBibleQuotes(
+            editor,
+            this.settings,
+            this.bibleCitationProvider,
+            contentSelection,
+          );
+          if (result.inserted > 0) {
+            const notice = contentSelection
+              ? this.t('notices.bibleQuotesInsertedSelection')
+              : this.t('notices.bibleQuotesInserted');
+            new Notice(notice);
+          } else if (result.fetchFailed > 0) {
+            new Notice(this.t('notices.bibleQuoteFetchFailed'));
+          } else {
+            new Notice(this.t('notices.noBibleLinksFound'));
+          }
+        } catch (error: unknown) {
+          logger.error(
+            'Error inserting Bible quotes:',
+            error instanceof Error ? error.message : String(error),
+          );
+          new Notice(this.t('notices.errorInsertingQuotes'));
+        }
+      },
+    });
+
+    this.addCommand({
+      id: 'insert-bible-quote-at-cursor',
+      name: this.t('commands.insertBibleQuoteAtCursor'),
+      icon: 'text-quote',
+      editorCallback: async (editor: Editor) => {
+        try {
+          const result = await insertBibleQuoteAtCursor(
+            editor,
+            this.settings,
+            this.bibleCitationProvider,
+          );
+          if (result.inserted) {
+            new Notice(this.t('notices.bibleQuoteInsertedAtCursor'));
+          } else if (result.alreadyExists) {
+            new Notice(this.t('notices.bibleQuoteAlreadyExists'));
+          } else if (result.fetchFailed) {
+            new Notice(this.t('notices.bibleQuoteFetchFailed'));
+          } else {
+            new Notice(this.t('notices.noBibleLinkAtCursor'));
+          }
+        } catch (error: unknown) {
+          logger.error(
+            'Error inserting Bible quote at cursor:',
+            error instanceof Error ? error.message : String(error),
+          );
+          new Notice(this.t('notices.errorInsertingQuotes'));
+        }
+      },
+    });
+
+    this.bibleSuggester = new BibleReferenceSuggester(this);
+    this.registerEditorSuggest(this.bibleSuggester);
+
+    this.registerEvent(
+      this.app.workspace.on('editor-menu', (menu: Menu, editor: Editor) => {
+        const cursor = editor.getCursor();
+        const line = editor.getLine(cursor.line);
+
+        if (ANY_BIBLE_LINK_REGEX.test(line)) {
+          menu.addItem((item) => {
+            item
+              .setTitle(this.t('contextMenu.insertBibleQuote'))
+              .setIcon('quote-glyph')
+              .onClick(async () => {
+                try {
+                  const result = await insertBibleQuoteAtCursor(
+                    editor,
+                    this.settings,
+                    this.bibleCitationProvider,
+                  );
+                  if (result.inserted) {
+                    new Notice(this.t('notices.bibleQuoteInsertedAtCursor'));
+                  } else if (result.alreadyExists) {
+                    new Notice(this.t('notices.bibleQuoteAlreadyExists'));
+                  } else if (result.fetchFailed) {
+                    new Notice(this.t('notices.bibleQuoteFetchFailed'));
+                  } else {
+                    new Notice(this.t('notices.noBibleLinkAtCursor'));
+                  }
+                } catch (error: unknown) {
+                  logger.error(
+                    'Error inserting Bible quote from context menu:',
+                    error instanceof Error ? error.message : String(error),
+                  );
+                  new Notice(this.t('notices.errorInsertingQuotes'));
+                }
+              });
+          });
+        }
+      }),
+    );
+
+    logger.log('Plugin loaded');
+  }
+
+  private getBookRegex(): RegExp {
+    const lang = this.settings.language;
+    if (this.cachedBookRegex && this.cachedBookRegexLanguage === lang) {
+      return this.cachedBookRegex;
+    }
+    this.cachedBookRegex = buildBookNameRegex(lang);
+    this.cachedBookRegexLanguage = lang;
+    return this.cachedBookRegex;
+  }
+
+  private isIgnoredTextNode(node: Text): boolean {
+    const parent = node.parentElement;
+    if (!parent) return true;
+
+    if (
+      parent.closest(
+        'a, code, pre, .cm-inline-code, .math, .footnote-ref, .frontmatter, .callout-title',
+      )
+    ) {
+      return true;
+    }
+
+    const text = node.nodeValue?.trim() ?? '';
+    return text.length === 0;
+  }
+
+  private openDetectedReferenceExternally(reference: BibleReference): void {
+    const linkLanguage = this.settings.noLanguageParameter ? undefined : this.settings.language;
+
+    const directLinkFormat: LinkFormat =
+      this.settings.autoDetectAction === 'open'
+        ? this.settings.autoDetectOpenUsesWebShareLink
+          ? 'jworg-finder'
+          : 'jwlibrary'
+        : this.settings.popupOpenButtonUsesWebShareLink
+          ? 'jworg-finder'
+          : 'jwlibrary';
+
+    const url = formatJWLibraryLink(reference, linkLanguage, directLinkFormat);
+
+    if (Array.isArray(url)) {
+      window.open(url[0], '_blank');
+    } else {
+      window.open(url, '_blank');
+    }
+  }
+
+  private detectReferenceFromText(
+    text: string,
+  ): { reference: BibleReference; matchedText: string } | null {
+    const matches = this.detectReferencesInText(text);
+    if (matches.length === 0) return null;
+
+    return {
+      reference: matches[0].reference,
+      matchedText: matches[0].matchedText,
+    };
+  }
+
+  private detectReferencesInText(text: string): Array<{
+    start: number;
+    end: number;
+    matchedText: string;
+    reference: BibleReference;
+  }> {
+    const results: Array<{
+      start: number;
+      end: number;
+      matchedText: string;
+      reference: BibleReference;
+    }> = [];
+
+    const seen = new Set<string>();
+
+    const patterns = [
+      /\{\{[^}]+\}\}/gu,
+      new RegExp(this.getBookRegex().source, 'giu'),
+      new RegExp(BIBLE_REFERENCE_REGEX.source, 'giu'),
+    ];
+
+    for (const pattern of patterns) {
+      let match: RegExpExecArray | null;
+
+      while ((match = pattern.exec(text)) !== null) {
+        const matched = match[0];
+        const extracted = extractBibleReferenceFromMatch(matched, this.settings.language);
+        if (!extracted) continue;
+
+        try {
+          const reference =
+            extracted.reference ?? parseBibleReference(extracted.text, this.settings.language);
+          if (!reference) continue;
+
+          const start = match.index + extracted.offset;
+          const end = start + extracted.text.length;
+
+          if (start < 0 || end <= start) continue;
+
+          const key = `${start}:${end}:${extracted.text}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+
+          results.push({
+            start,
+            end,
+            matchedText: extracted.text,
+            reference,
+          });
+        } catch {
+          continue;
+        }
+      }
+    }
+
+    results.sort((a, b) => {
+      if (a.start !== b.start) return a.start - b.start;
+      return b.end - a.end;
+    });
+
+    const resolved: typeof results = [];
+
+    for (const candidate of results) {
+      const previous = resolved[resolved.length - 1];
+
+      if (!previous) {
+        resolved.push(candidate);
+        continue;
+      }
+
+      const overlaps = candidate.start < previous.end;
+
+      if (!overlaps) {
+        resolved.push(candidate);
+        continue;
+      }
+
+      const previousLength = previous.end - previous.start;
+      const candidateLength = candidate.end - candidate.start;
+
+      if (candidate.start === previous.start && candidateLength > previousLength) {
+        resolved[resolved.length - 1] = candidate;
+      }
+    }
+
+    return resolved;
+  }
+
+  private processRenderedReferences(element: HTMLElement): void {
+    if (this.processingElements.has(element)) return;
+    this.processingElements.add(element);
+
+    const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+    const textNodes: Text[] = [];
+
+    let currentNode = walker.nextNode();
+    while (currentNode) {
+      const textNode = currentNode as Text;
+      if (!this.isIgnoredTextNode(textNode)) {
+        textNodes.push(textNode);
+      }
+      currentNode = walker.nextNode();
+    }
+
+    for (const textNode of textNodes) {
+      this.decorateTextNode(textNode);
+    }
+  }
+
+  private decorateTextNode(textNode: Text): void {
+    const text = textNode.nodeValue ?? '';
+    const matches = this.detectReferencesInText(text);
+    if (matches.length === 0) return;
+
+    const fragment = document.createDocumentFragment();
+    let cursor = 0;
+
+    for (const match of matches) {
+      if (match.start > cursor) {
+        fragment.appendChild(document.createTextNode(text.slice(cursor, match.start)));
+      }
+
+      const anchor = document.createElement('a');
+      anchor.href = '#';
+      anchor.className = 'jwll-auto-detected-reference';
+      anchor.textContent = text.slice(match.start, match.end);
+      anchor.setAttribute('data-reference-text', match.matchedText);
+      anchor.addEventListener('click', (event) => {
+        void this.handleDetectedReferenceClick(event, match.reference, match.matchedText);
+      });
+
+      fragment.appendChild(anchor);
+      cursor = match.end;
+    }
+
+    if (cursor < text.length) {
+      fragment.appendChild(document.createTextNode(text.slice(cursor)));
+    }
+
+    textNode.parentNode?.replaceChild(fragment, textNode);
+  }
+
+  private async handleDetectedReferenceClick(
+    event: MouseEvent,
+    reference: BibleReference,
+    matchedText: string,
+  ): Promise<void> {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (this.settings.autoDetectAction === 'open') {
+      this.openDetectedReferenceExternally(reference);
+      return;
+    }
+
+    const refText = formatBibleText(reference, this.settings.bookLength, this.settings.language);
+
+    try {
+      const result = await this.bibleCitationProvider.getCitation(
+        reference,
+        this.settings.language,
+      );
+
+      if (!result.success) {
+        new Notice(result.error || this.t('notices.bibleQuoteFetchFailed'));
+        return;
+      }
+
+      const sourceLabel = result.source === 'offline' ? 'Offline Bible' : 'Online Bible';
+
+      new DetectedReferenceModal(
+        this.app,
+        refText || matchedText,
+        result.text,
+        sourceLabel,
+        () => this.openDetectedReferenceExternally(reference),
+      ).open();
+    } catch (error: unknown) {
+      logger.error(
+        'Error opening detected Bible reference:',
+        error instanceof Error ? error.message : String(error),
+      );
+      new Notice(this.t('notices.bibleQuoteFetchFailed'));
+    }
+  }
+
+  getTranslationService(): TranslationService {
+    return this.translationService;
+  }
+
+  getBibleCitationProvider(): ConfiguredBibleCitationProvider {
+    return this.bibleCitationProvider;
+  }
+
+  getOfflineBibleRepository(): VaultOfflineBibleRepository {
+    return this.offlineBibleRepository;
+  }
+
+  getEpubImportService(): BibleEpubImportService {
+    return this.epubImportService;
+  }
+
+  public async insertBibleQuoteForReference(
+    editor: Editor,
+    reference: BibleReference,
+  ): Promise<void> {
+    try {
+      const quoteText = await generateBibleQuoteText(
+        { reference },
+        this.settings,
+        this.bibleCitationProvider,
+      );
+
+      if (!quoteText) {
+        new Notice(this.t('notices.bibleQuoteFetchFailed'));
+        return;
+      }
+
+      const cursor = editor.getCursor();
+      const currentLine = editor.getLine(cursor.line);
+
+      editor.transaction({
+        changes: [
+          {
+            from: { line: cursor.line, ch: currentLine.length },
+            to: { line: cursor.line, ch: currentLine.length },
+            text: '\n' + quoteText,
+          },
+        ],
+      });
+
+      new Notice(this.t('notices.bibleQuoteInsertedAtCursor'));
+    } catch (error: unknown) {
+      logger.error(
+        'Error auto-inserting Bible quote:',
+        error instanceof Error ? error.message : String(error),
+      );
+      new Notice(this.t('notices.errorInsertingQuotes'));
+    }
+  }
+
+  async loadSettings() {
+    const savedData = (await this.loadData()) as LinkReplacerSettings;
+    this.settings = {
+      ...DEFAULT_SETTINGS,
+      ...savedData,
+      bibleQuote: {
+        ...DEFAULT_SETTINGS.bibleQuote,
+        ...savedData?.bibleQuote,
+      },
+      offlineBible: {
+        ...DEFAULT_SETTINGS.offlineBible,
+        ...savedData?.offlineBible,
+      },
+    };
+
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
+    const oldFormat = (this.settings.bibleQuote as any).format as BibleQuoteFormat | undefined;
+    if (oldFormat && !this.settings.bibleQuote.template) {
+      this.settings.bibleQuote.template = migrateFormatToTemplate(oldFormat);
+      await this.saveSettings();
+    }
+  }
+
+  async saveSettings() {
+    await this.saveData(this.settings);
+  }
+}
