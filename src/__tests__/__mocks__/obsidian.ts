@@ -213,3 +213,26 @@ export const activeWindow = globalThis.window;
 export const getLanguage = jest.fn<string, []>(() => 'en');
 
 // Add any other Obsidian classes/types you need to mock
+export class Modal {
+  app: App;
+  contentEl: HTMLElement;
+  titleEl: HTMLElement;
+
+  constructor(app: App) {
+    this.app = app;
+    this.contentEl = document.createElement('div');
+    this.titleEl = document.createElement('div');
+  }
+
+  open() {
+    this.onOpen();
+  }
+
+  close() {
+    this.onClose();
+  }
+
+  onOpen() {}
+
+  onClose() {}
+}
