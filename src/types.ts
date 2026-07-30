@@ -66,6 +66,8 @@ export interface LinkReplacerSettings extends LinkStyles {
   autoDetectReferences: boolean;
   autoDetectInReadingView: boolean;
   autoDetectAction: AutoDetectAction;
+  autoDetectOpenUsesWebShareLink: boolean;
+  popupOpenButtonUsesWebShareLink: boolean;
 }
 
 export interface BibleBook {
