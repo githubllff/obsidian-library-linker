@@ -72,7 +72,9 @@ export class JWLibraryLinkerSettings extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('Link format')
-      .setDesc('Choose whether created links use the JW Library app URI or the JW.org finder/share link.')
+      .setDesc(
+        'Choose whether created links use the JW Library app URI or the JW.org finder/share link.',
+      )
       .addDropdown((dropdown) =>
         dropdown
           .addOptions({
@@ -185,7 +187,7 @@ export class JWLibraryLinkerSettings extends PluginSettingTab {
       .setName('Import EPUB Bible')
       .setDesc('Import an EPUB Bible into the plugin’s offline library.')
       .addButton((button) =>
-        button.setButtonText('Import EPUB').setCta().onClick(async () => {
+        button.setButtonText('Import EPUB').setCta().onClick(() => {
           new Notice('Use your existing EPUB import flow here.');
         }),
       );
@@ -218,7 +220,9 @@ export class JWLibraryLinkerSettings extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('Detected reference click action')
-      .setDesc('Choose whether clicking an auto-detected reference opens it directly or shows a popup.')
+      .setDesc(
+        'Choose whether clicking an auto-detected reference opens it directly or shows a popup.',
+      )
       .addDropdown((dropdown) =>
         dropdown
           .addOptions({
