@@ -32,7 +32,6 @@ import { ContentSelection } from '@/utils/findJWLibraryLinks';
 import { parseBibleReference, extractBibleReferenceFromMatch } from '@/utils/parseBibleReference';
 import { BIBLE_REFERENCE_REGEX } from '@/utils/bibleReferenceRegex';
 import { buildBookNameRegex } from '@/utils/buildBookNameRegex';
-import { formatBibleText } from '@/utils/formatBibleText';
 import { formatJWLibraryLink } from '@/utils/formatJWLibraryLink';
 import { DetectedReferenceModal } from '@/DetectedReferenceModal';
 
@@ -342,6 +341,20 @@ export default class JWLibraryLinkerPlugin extends Plugin {
     logger.log('Plugin loaded');
   }
 
+  getTranslationService(): TranslationService {
+    return this.translationService;
+  }
+
+  async insertBibleQuoteForReference(reference: BibleReference): Promise<string | null> {
+    const result = await this.bibleCitationProvider.getCitation(reference, this.settings.language);
+
+    if (!result.success) {
+      return null;
+    }
+
+    return generateBibleQuoteText(result.text);
+  }
+
   private getBookRegex(): RegExp {
     const lang = this.settings.language;
     if (this.cachedBookRegex && this.cachedBookRegexLanguage === lang) {
@@ -621,23 +634,20 @@ export default class JWLibraryLinkerPlugin extends Plugin {
     }
 
     try {
-      const result = await this.bibleCitationProvider.getCitation(reference, this.settings.language);
+      const quoteText = await this.insertBibleQuoteForReference(reference);
 
-      if (!result.success) {
+      if (!quoteText) {
         this.openDetectedReferenceExternally(reference);
         return;
       }
 
-      const linkedRef = formatBibleText(reference, this.settings, true);
-      const quoteText = generateBibleQuoteText(result.text);
-      const sourceLabel =
-        result.source === 'offline'
-          ? this.t('settings.offlineBible.enabled')
-          : this.t('settings.offlineBible.allowOnlineFallback');
+      const sourceLabel = this.settings.offlineBible.enabled
+        ? this.t('settings.offlineBible.enabled')
+        : undefined;
 
       new DetectedReferenceModal(
         this.app,
-        linkedRef,
+        matchedText,
         quoteText,
         sourceLabel,
         () => this.openDetectedReferenceExternally(reference),
@@ -663,9 +673,11 @@ export default class JWLibraryLinkerPlugin extends Plugin {
         };
       }
 
-      if (typeof savedBibleQuote.format === 'string') {
+      if (typeof (savedBibleQuote as { format?: unknown }).format === 'string') {
         return {
-          template: migrateFormatToTemplate(savedBibleQuote.format as BibleQuoteFormat),
+          template: migrateFormatToTemplate(
+            (savedBibleQuote as { format: BibleQuoteFormat }).format,
+          ),
         };
       }
 
