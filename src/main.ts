@@ -23,6 +23,12 @@ import {
 import { logger } from '@/utils/logger';
 import { getBookLanguage } from '@/utils/signLanguage';
 import { ContentSelection } from '@/utils/findJWLibraryLinks';
+import { parseBibleReference, extractBibleReferenceFromMatch } from '@/utils/parseBibleReference';
+import { BIBLE_REFERENCE_REGEX } from '@/utils/bibleReferenceRegex';
+import { buildBookNameRegex } from '@/utils/buildBookNameRegex';
+import { formatBibleText } from '@/utils/formatBibleText';
+import { formatJWLibraryLink } from '@/utils/formatJWLibraryLink';
+import { DetectedReferenceModal } from '@/DetectedReferenceModal';
 
 export const DEFAULT_STYLES: LinkStyles = {
   bookLength: 'medium',
@@ -49,6 +55,9 @@ export const DEFAULT_SETTINGS: LinkReplacerSettings = {
     preferOffline: true,
     allowOnlineFallback: true,
   },
+  autoDetectReferences: true,
+  autoDetectInReadingView: true,
+  autoDetectAction: 'popup',
   ...DEFAULT_STYLES,
 };
 
@@ -79,6 +88,9 @@ export default class JWLibraryLinkerPlugin extends Plugin {
   private epubImportService!: BibleEpubImportService;
 
   private t!: (key: string, variables?: Record<string, string>) => string;
+  private cachedBookRegex: RegExp | null = null;
+  private cachedBookRegexLanguage: string | null = null;
+  private processingElements = new WeakSet<HTMLElement>();
 
   async onload() {
     this.translationService = new TranslationService();
@@ -105,6 +117,13 @@ export default class JWLibraryLinkerPlugin extends Plugin {
     loadBibleBooks(getBookLanguage(this.settings.language));
 
     this.addSettingTab(new JWLibraryLinkerSettings(this.app, this));
+
+    this.registerMarkdownPostProcessor((element) => {
+      if (!this.settings.autoDetectReferences || !this.settings.autoDetectInReadingView) {
+        return;
+      }
+      this.processRenderedReferences(element);
+    });
 
     this.addCommand({
       id: 'link-unlinked-bible-references',
@@ -284,6 +303,210 @@ export default class JWLibraryLinkerPlugin extends Plugin {
     logger.log('Plugin loaded');
   }
 
+  private getBookRegex(): RegExp {
+    const lang = this.settings.language;
+    if (this.cachedBookRegex && this.cachedBookRegexLanguage === lang) {
+      return this.cachedBookRegex;
+    }
+    this.cachedBookRegex = buildBookNameRegex(lang);
+    this.cachedBookRegexLanguage = lang;
+    return this.cachedBookRegex;
+  }
+
+  private isIgnoredTextNode(node: Text): boolean {
+    const parent = node.parentElement;
+    if (!parent) return true;
+
+    if (
+      parent.closest(
+        'a, code, pre, .cm-inline-code, .math, .footnote-ref, .frontmatter, .callout-title',
+      )
+    ) {
+      return true;
+    }
+
+    const text = node.nodeValue?.trim() ?? '';
+    return text.length === 0;
+  }
+
+  private detectReferenceFromText(text: string): { reference: BibleReference; matchedText: string } | null {
+    const regexMatches = text.match(BIBLE_REFERENCE_REGEX) || text.match(this.getBookRegex());
+    if (!regexMatches?.[0]) return null;
+
+    const extracted = extractBibleReferenceFromMatch(regexMatches[0], this.settings.language);
+    if (!extracted) return null;
+
+    try {
+      const reference = parseBibleReference(extracted.text, this.settings.language);
+      if (!reference) return null;
+      return {
+        reference,
+        matchedText: extracted.text,
+      };
+    } catch (error: unknown) {
+      logger.error(error instanceof Error ? error.message : String(error));
+      return null;
+    }
+  }
+
+  private detectReferencesInText(text: string): Array<{
+    start: number;
+    end: number;
+    matchedText: string;
+    reference: BibleReference;
+  }> {
+    const results: Array<{
+      start: number;
+      end: number;
+      matchedText: string;
+      reference: BibleReference;
+    }> = [];
+
+    const patterns = [new RegExp(BIBLE_REFERENCE_REGEX.source, 'g'), new RegExp(this.getBookRegex().source, 'g')];
+
+    for (const pattern of patterns) {
+      let match: RegExpExecArray | null;
+      while ((match = pattern.exec(text)) !== null) {
+        const matched = match[0];
+        const extracted = extractBibleReferenceFromMatch(matched, this.settings.language);
+        if (!extracted) continue;
+
+        try {
+          const reference = parseBibleReference(extracted.text, this.settings.language);
+          if (!reference) continue;
+
+          const start = match.index + extracted.offset;
+          const end = start + extracted.text.length;
+
+          results.push({
+            start,
+            end,
+            matchedText: extracted.text,
+            reference,
+          });
+        } catch {
+          continue;
+        }
+      }
+    }
+
+    results.sort((a, b) => a.start - b.start);
+
+    const deduped: typeof results = [];
+    let lastEnd = -1;
+    for (const result of results) {
+      if (result.start < lastEnd) continue;
+      deduped.push(result);
+      lastEnd = result.end;
+    }
+
+    return deduped;
+  }
+
+  private processRenderedReferences(element: HTMLElement): void {
+    if (this.processingElements.has(element)) return;
+    this.processingElements.add(element);
+
+    const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+    const textNodes: Text[] = [];
+
+    let currentNode = walker.nextNode();
+    while (currentNode) {
+      const textNode = currentNode as Text;
+      if (!this.isIgnoredTextNode(textNode)) {
+        textNodes.push(textNode);
+      }
+      currentNode = walker.nextNode();
+    }
+
+    for (const textNode of textNodes) {
+      this.decorateTextNode(textNode);
+    }
+  }
+
+  private decorateTextNode(textNode: Text): void {
+    const text = textNode.nodeValue ?? '';
+    const matches = this.detectReferencesInText(text);
+    if (matches.length === 0) return;
+
+    const fragment = document.createDocumentFragment();
+    let cursor = 0;
+
+    for (const match of matches) {
+      if (match.start > cursor) {
+        fragment.appendChild(document.createTextNode(text.slice(cursor, match.start)));
+      }
+
+      const anchor = document.createElement('a');
+      anchor.href = '#';
+      anchor.className = 'jwll-auto-detected-reference';
+      anchor.textContent = text.slice(match.start, match.end);
+      anchor.setAttribute('data-reference-text', match.matchedText);
+      anchor.addEventListener('click', (event) => {
+        void this.handleDetectedReferenceClick(event, match.reference, match.matchedText);
+      });
+
+      fragment.appendChild(anchor);
+      cursor = match.end;
+    }
+
+    if (cursor < text.length) {
+      fragment.appendChild(document.createTextNode(text.slice(cursor)));
+    }
+
+    textNode.parentNode?.replaceChild(fragment, textNode);
+  }
+
+  private async handleDetectedReferenceClick(
+    event: MouseEvent,
+    reference: BibleReference,
+    matchedText: string,
+  ): Promise<void> {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const linkLanguage = this.settings.noLanguageParameter ? undefined : this.settings.language;
+
+    if (this.settings.autoDetectAction === 'open') {
+      const url = formatJWLibraryLink(reference, linkLanguage, this.settings.linkFormat);
+      if (Array.isArray(url)) {
+        window.open(url[0], '_blank');
+      } else {
+        window.open(url, '_blank');
+      }
+      return;
+    }
+
+    const refText = formatBibleText(reference, this.settings.bookLength, this.settings.language);
+
+    try {
+      const result = await this.bibleCitationProvider.getCitation(reference, this.settings.language);
+
+      if (!result.success) {
+        new Notice(result.error || this.t('notices.bibleQuoteFetchFailed'));
+        return;
+      }
+
+      const sourceLabel =
+        result.source === 'offline'
+          ? 'Offline Bible'
+          : 'Online Bible';
+
+      new DetectedReferenceModal(
+        this.app,
+        refText || matchedText,
+        result.text,
+        sourceLabel,
+      ).open();
+    } catch (error: unknown) {
+      logger.error(
+        'Error opening detected Bible reference:',
+        error instanceof Error ? error.message : String(error),
+      );
+      new Notice(this.t('notices.bibleQuoteFetchFailed'));
+    }
+  }
+
   getTranslationService(): TranslationService {
     return this.translationService;
   }
@@ -300,12 +523,6 @@ export default class JWLibraryLinkerPlugin extends Plugin {
     return this.epubImportService;
   }
 
-  /**
-   * Fetches and inserts a Bible quote for the given reference directly after
-   * the current cursor line. Uses generateBibleQuoteText with the already-parsed
-   * reference object so no editor line scanning is needed — avoids timing issues
-   * when called immediately after replaceRange in BibleReferenceSuggester.
-   */
   public async insertBibleQuoteForReference(
     editor: Editor,
     reference: BibleReference,
@@ -360,7 +577,7 @@ export default class JWLibraryLinkerPlugin extends Plugin {
       },
     };
 
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any -- migration from old settings format
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
     const oldFormat = (this.settings.bibleQuote as any).format as BibleQuoteFormat | undefined;
     if (oldFormat && !this.settings.bibleQuote.template) {
       this.settings.bibleQuote.template = migrateFormatToTemplate(oldFormat);
