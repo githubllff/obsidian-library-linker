@@ -82,14 +82,61 @@ const ANY_BIBLE_LINK_REGEX =
 
 type StoredSettings = Partial<LinkReplacerSettings> & {
   bibleQuote?: {
-    template?: string;
-    format?: BibleQuoteFormat;
-  };
-  offlineBible?: Partial<LinkReplacerSettings['offlineBible']>;
+    template?: string | null;
+    format?: BibleQuoteFormat | null;
+  } | null;
+  offlineBible?: Partial<LinkReplacerSettings['offlineBible']> | null;
 };
 
+function isObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function normalizeBibleQuote(
+  value: StoredSettings['bibleQuote'],
+): LinkReplacerSettings['bibleQuote'] {
+  if (!isObject(value)) {
+    return { ...DEFAULT_SETTINGS.bibleQuote };
+  }
+
+  const template = value.template;
+  if (typeof template === 'string' && template.trim().length > 0) {
+    return { template };
+  }
+
+  const legacyFormat = value.format;
+  if (typeof legacyFormat === 'string') {
+    return { template: migrateFormatToTemplate(legacyFormat) };
+  }
+
+  return { ...DEFAULT_SETTINGS.bibleQuote };
+}
+
+function normalizeOfflineBible(
+  value: StoredSettings['offlineBible'],
+): LinkReplacerSettings['offlineBible'] {
+  if (!isObject(value)) {
+    return { ...DEFAULT_SETTINGS.offlineBible };
+  }
+
+  return {
+    enabled:
+      typeof value.enabled === 'boolean'
+        ? value.enabled
+        : DEFAULT_SETTINGS.offlineBible.enabled,
+    preferOffline:
+      typeof value.preferOffline === 'boolean'
+        ? value.preferOffline
+        : DEFAULT_SETTINGS.offlineBible.preferOffline,
+    allowOnlineFallback:
+      typeof value.allowOnlineFallback === 'boolean'
+        ? value.allowOnlineFallback
+        : DEFAULT_SETTINGS.offlineBible.allowOnlineFallback,
+  };
+}
+
 export default class JWLibraryLinkerPlugin extends Plugin {
-  settings: LinkReplacerSettings = DEFAULT_SETTINGS;
+  settings: LinkReplacerSettings = { ...DEFAULT_SETTINGS };
 
   private translationService!: TranslationService;
   private bibleSuggester!: BibleReferenceSuggester;
@@ -102,29 +149,25 @@ export default class JWLibraryLinkerPlugin extends Plugin {
   private cachedBookRegexLanguage: string | null = null;
   private processingElements = new WeakSet<HTMLElement>();
 
-  private rerenderActiveReadingView = debounce(
-    () => {
-      const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-      if (!view) return;
+  private rerenderActiveReadingView = debounce(() => {
+    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+    if (!view) return;
 
-      const modeGetter = (view as unknown as { getMode?: () => string }).getMode;
-      const mode = typeof modeGetter === 'function' ? modeGetter.call(view) : null;
+    const modeGetter = (view as unknown as { getMode?: () => string }).getMode;
+    const mode = typeof modeGetter === 'function' ? modeGetter.call(view) : null;
 
-      if (mode !== 'preview') return;
+    if (mode !== 'preview') return;
 
-      try {
-        (
-          view as unknown as {
-            previewMode?: { rerender?: (full?: boolean) => void };
-          }
-        ).previewMode?.rerender?.(true);
-      } catch (error) {
-        logger.error('Failed to rerender reading view:', error);
-      }
-    },
-    250,
-    true,
-  );
+    try {
+      (
+        view as unknown as {
+          previewMode?: { rerender?: (full?: boolean) => void };
+        }
+      ).previewMode?.rerender?.(true);
+    } catch (error) {
+      logger.error('Failed to rerender reading view:', error);
+    }
+  }, 250, true);
 
   async onload() {
     try {
@@ -139,11 +182,11 @@ export default class JWLibraryLinkerPlugin extends Plugin {
       this.t = this.translationService.t.bind(this.translationService);
       console.log('JWLL: translator bound');
 
-      BibleTextFetcher.initialize(this.app);
-      console.log('JWLL: fetcher initialized');
-
       await this.loadSettings();
       console.log('JWLL: settings loaded', this.settings);
+
+      BibleTextFetcher.initialize(this.app);
+      console.log('JWLL: fetcher initialized');
 
       const offlineBibleVaultPath = getOfflineBibleVaultPath(this.app, this.manifest.id);
       console.log('JWLL: vault path', offlineBibleVaultPath);
@@ -376,9 +419,13 @@ export default class JWLibraryLinkerPlugin extends Plugin {
       console.log('JWLL: onload complete');
     } catch (error) {
       console.error('JWLL: plugin failed during onload', error);
-      new Notice(`JW Library Linker failed to load: ${String(error)}`);
+      new Notice(`JW Library Linker failed to load: ${error instanceof Error ? error.message : String(error)}`);
       throw error;
     }
+  }
+
+  onunload() {
+    logger.log('Plugin unloaded');
   }
 
   getTranslationService(): TranslationService {
@@ -678,10 +725,7 @@ export default class JWLibraryLinkerPlugin extends Plugin {
     }
 
     try {
-      const result = await this.bibleCitationProvider.getCitation(
-        reference,
-        this.settings.language,
-      );
+      const result = await this.bibleCitationProvider.getCitation(reference, this.settings.language);
       const quoteText = result.success ? result.text : null;
 
       if (!quoteText) {
@@ -693,8 +737,12 @@ export default class JWLibraryLinkerPlugin extends Plugin {
         ? this.t('settings.offlineBible.enabled')
         : undefined;
 
-      new DetectedReferenceModal(this.app, matchedText, quoteText, sourceLabel, () =>
-        this.openDetectedReferenceExternally(reference),
+      new DetectedReferenceModal(
+        this.app,
+        matchedText,
+        quoteText,
+        sourceLabel,
+        () => this.openDetectedReferenceExternally(reference),
       ).open();
     } catch (error) {
       logger.error('Error handling detected reference click:', error);
@@ -703,43 +751,126 @@ export default class JWLibraryLinkerPlugin extends Plugin {
   }
 
   async loadSettings() {
-    const loadedData = (await this.loadData()) as StoredSettings;
-
-    const savedBibleQuote = loadedData.bibleQuote;
-
-    const migratedBibleQuote = (() => {
-      if (!savedBibleQuote) {
-        return DEFAULT_SETTINGS.bibleQuote;
-      }
-
-      if (typeof savedBibleQuote.template === 'string') {
-        return {
-          template: savedBibleQuote.template,
-        };
-      }
-
-      if (typeof savedBibleQuote.format === 'string') {
-        return {
-          template: migrateFormatToTemplate(savedBibleQuote.format),
-        };
-      }
-
-      return DEFAULT_SETTINGS.bibleQuote;
-    })();
+    const raw = (await this.loadData()) as StoredSettings | null;
+    const loadedData = isObject(raw) ? raw : {};
 
     this.settings = {
       ...DEFAULT_SETTINGS,
       ...loadedData,
-      bibleQuote: migratedBibleQuote,
-      offlineBible: {
-        ...DEFAULT_SETTINGS.offlineBible,
-        ...(loadedData.offlineBible ?? {}),
-      },
+      bibleQuote: normalizeBibleQuote(loadedData.bibleQuote),
+      offlineBible: normalizeOfflineBible(loadedData.offlineBible),
     };
+
+    this.settings.language =
+      typeof loadedData.language === 'string' && loadedData.language.length > 0
+        ? loadedData.language
+        : DEFAULT_SETTINGS.language;
+
+    this.settings.linkFormat =
+      loadedData.linkFormat === 'jwlibrary' || loadedData.linkFormat === 'jworg-finder'
+        ? loadedData.linkFormat
+        : DEFAULT_SETTINGS.linkFormat;
+
+    this.settings.autoDetectAction =
+      loadedData.autoDetectAction === 'popup' || loadedData.autoDetectAction === 'open'
+        ? loadedData.autoDetectAction
+        : DEFAULT_SETTINGS.autoDetectAction;
+
+    this.settings.bookLength =
+      loadedData.bookLength === 'short' ||
+      loadedData.bookLength === 'medium' ||
+      loadedData.bookLength === 'long'
+        ? loadedData.bookLength
+        : DEFAULT_SETTINGS.bookLength;
+
+    this.settings.fontStyle =
+      loadedData.fontStyle === 'normal' ||
+      loadedData.fontStyle === 'italic' ||
+      loadedData.fontStyle === 'bold' ||
+      loadedData.fontStyle === 'boldItalic'
+        ? loadedData.fontStyle
+        : DEFAULT_SETTINGS.fontStyle;
+
+    this.settings.prefixOutsideLink =
+      typeof loadedData.prefixOutsideLink === 'string'
+        ? loadedData.prefixOutsideLink
+        : DEFAULT_SETTINGS.prefixOutsideLink;
+
+    this.settings.prefixInsideLink =
+      typeof loadedData.prefixInsideLink === 'string'
+        ? loadedData.prefixInsideLink
+        : DEFAULT_SETTINGS.prefixInsideLink;
+
+    this.settings.suffixInsideLink =
+      typeof loadedData.suffixInsideLink === 'string'
+        ? loadedData.suffixInsideLink
+        : DEFAULT_SETTINGS.suffixInsideLink;
+
+    this.settings.suffixOutsideLink =
+      typeof loadedData.suffixOutsideLink === 'string'
+        ? loadedData.suffixOutsideLink
+        : DEFAULT_SETTINGS.suffixOutsideLink;
+
+    this.settings.openAutomatically =
+      typeof loadedData.openAutomatically === 'boolean'
+        ? loadedData.openAutomatically
+        : DEFAULT_SETTINGS.openAutomatically;
+
+    this.settings.insertQuoteAutomatically =
+      typeof loadedData.insertQuoteAutomatically === 'boolean'
+        ? loadedData.insertQuoteAutomatically
+        : DEFAULT_SETTINGS.insertQuoteAutomatically;
+
+    this.settings.noLanguageParameter =
+      typeof loadedData.noLanguageParameter === 'boolean'
+        ? loadedData.noLanguageParameter
+        : DEFAULT_SETTINGS.noLanguageParameter;
+
+    this.settings.reconvertExistingLinks =
+      typeof loadedData.reconvertExistingLinks === 'boolean'
+        ? loadedData.reconvertExistingLinks
+        : DEFAULT_SETTINGS.reconvertExistingLinks;
+
+    this.settings.autoDetectReferences =
+      typeof loadedData.autoDetectReferences === 'boolean'
+        ? loadedData.autoDetectReferences
+        : DEFAULT_SETTINGS.autoDetectReferences;
+
+    this.settings.autoDetectInReadingView =
+      typeof loadedData.autoDetectInReadingView === 'boolean'
+        ? loadedData.autoDetectInReadingView
+        : DEFAULT_SETTINGS.autoDetectInReadingView;
+
+    this.settings.autoDetectOpenUsesWebShareLink =
+      typeof loadedData.autoDetectOpenUsesWebShareLink === 'boolean'
+        ? loadedData.autoDetectOpenUsesWebShareLink
+        : DEFAULT_SETTINGS.autoDetectOpenUsesWebShareLink;
+
+    this.settings.popupOpenButtonUsesWebShareLink =
+      typeof loadedData.popupOpenButtonUsesWebShareLink === 'boolean'
+        ? loadedData.popupOpenButtonUsesWebShareLink
+        : DEFAULT_SETTINGS.popupOpenButtonUsesWebShareLink;
+
+    this.settings.updatedLinkStructure =
+      typeof loadedData.updatedLinkStructure === 'string' &&
+      loadedData.updatedLinkStructure.length > 0
+        ? loadedData.updatedLinkStructure
+        : DEFAULT_SETTINGS.updatedLinkStructure;
+
+    if (!this.settings.bibleQuote?.template) {
+      this.settings.bibleQuote = { ...DEFAULT_SETTINGS.bibleQuote };
+    }
   }
 
   async saveSettings() {
-    await this.saveData(this.settings);
+    const safeSettings: LinkReplacerSettings = {
+      ...this.settings,
+      bibleQuote: normalizeBibleQuote(this.settings.bibleQuote),
+      offlineBible: normalizeOfflineBible(this.settings.offlineBible),
+    };
+
+    this.settings = safeSettings;
+    await this.saveData(safeSettings);
     loadBibleBooks(getBookLanguage(this.settings.language));
     this.cachedBookRegex = null;
     this.cachedBookRegexLanguage = null;
