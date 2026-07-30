@@ -13,23 +13,32 @@ export function formatJWLibraryLink(
     throw new Error('errors.bookNotFound');
   }
 
-  if (!verseRanges) {
-    throw new Error('errors.invalidReferenceFormat');
-  }
-
-  const padRange = (book: number, chapter: number, start: number) =>
-    `${padBook(book)}${padChapter(chapter)}${padVerse(start)}`;
-
-  const link = (range: string) => {
+  const link = (finderParam: string, isChapterOnly = false) => {
     if (linkFormat === 'jworg-finder') {
       const locale = language ?? 'E';
-      return `https://www.jw.org/finder?srcid=jwlshare&wtlocale=${locale}&prefer=lang&bible=${range}&pub=nwtsty`;
+      const bibleParam = isChapterOnly ? `book=${finderParam}` : `bible=${finderParam}`;
+      return `https://www.jw.org/finder?srcid=jwlshare&wtlocale=${locale}&prefer=lang&${bibleParam}&pub=nwtsty`;
     }
-    // Default: jwlibrary://
-    return `jwlibrary:///finder?bible=${range}${language ? `&wtlocale=${language}` : ''}`;
+
+    if (isChapterOnly) {
+      return `jwlibrary:///finder?book=${finderParam}${language ? `&wtlocale=${language}` : ''}`;
+    }
+
+    return `jwlibrary:///finder?bible=${finderParam}${language ? `&wtlocale=${language}` : ''}`;
   };
 
-  // For a single range, return a single string
+  const padRange = (bookNumber: number, chapterNumber: number, verseNumber: number) =>
+    `${padBook(bookNumber)}${padChapter(chapterNumber)}${padVerse(verseNumber)}`;
+
+  const padBookChapter = (bookNumber: number, chapterNumber: number) =>
+    `${padBook(bookNumber)}${padChapter(chapterNumber)}`;
+
+  // Whole-book / chapter-only link support
+  if (!verseRanges || verseRanges.length === 0) {
+    return link(padBookChapter(book, chapter), true);
+  }
+
+  // Single range -> single string
   if (verseRanges.length === 1) {
     const { start, end } = verseRanges[0];
     const startChapter = chapter;
@@ -43,7 +52,7 @@ export function formatJWLibraryLink(
     return link(`${baseReference}-${padRange(book, endChapterValue, end)}`);
   }
 
-  // For multiple ranges, return an array of strings
+  // Multiple ranges -> array of links
   return verseRanges.map(({ start, end }) => {
     const baseReference = padRange(book, chapter, start);
 
