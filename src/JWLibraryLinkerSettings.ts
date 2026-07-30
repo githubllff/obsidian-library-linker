@@ -27,10 +27,13 @@ export class JWLibraryLinkerSettings extends PluginSettingTab {
       .setName('Language')
       .setDesc('Language used for Bible books, references, and Bible lookups.')
       .addText((text) =>
-        text.setPlaceholder('E').setValue(this.plugin.settings.language).onChange(async (value) => {
-          this.plugin.settings.language = value as Language;
-          await this.plugin.saveSettings();
-        }),
+        text
+          .setPlaceholder('E')
+          .setValue(this.plugin.settings.language)
+          .onChange(async (value) => {
+            this.plugin.settings.language = value as Language;
+            await this.plugin.saveSettings();
+          }),
       );
 
     new Setting(containerEl)
@@ -187,9 +190,12 @@ export class JWLibraryLinkerSettings extends PluginSettingTab {
       .setName('Import EPUB Bible')
       .setDesc('Import an EPUB Bible into the plugin’s offline library.')
       .addButton((button) =>
-        button.setButtonText('Import EPUB').setCta().onClick(() => {
-          new Notice('Use your existing EPUB import flow here.');
-        }),
+        button
+          .setButtonText('Import EPUB')
+          .setCta()
+          .onClick(() => {
+            new Notice('Use your existing EPUB import flow here.');
+          }),
       );
 
     containerEl.createEl('h3', { text: 'Reading view detection' });

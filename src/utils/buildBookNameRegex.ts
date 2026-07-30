@@ -6,9 +6,7 @@ function escapeRegex(str: string): string {
 }
 
 function makeFlexibleNamePattern(name: string): string {
-  return escapeRegex(name.trim())
-    .replace(/\./g, '\\.?')
-    .replace(/\s+/g, '[\\s.\\-]*');
+  return escapeRegex(name.trim()).replace(/\./g, '\\.?').replace(/\s+/g, '[\\s.\\-]*');
 }
 
 export function buildBookNameRegex(language: Language): RegExp {
@@ -16,7 +14,9 @@ export function buildBookNameRegex(language: Language): RegExp {
   const allNames = new Set<string>();
 
   for (const book of books) {
-    const names = [book.name.short, book.name.medium, book.name.long, ...book.aliases].filter(Boolean);
+    const names = [book.name.short, book.name.medium, book.name.long, ...book.aliases].filter(
+      Boolean,
+    );
 
     for (const name of names) {
       allNames.add(name);

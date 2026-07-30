@@ -540,12 +540,8 @@ export default class JWLibraryLinkerPlugin extends Plugin {
 
       const sourceLabel = result.source === 'offline' ? 'Offline Bible' : 'Online Bible';
 
-      new DetectedReferenceModal(
-        this.app,
-        refText || matchedText,
-        result.text,
-        sourceLabel,
-        () => this.openDetectedReferenceExternally(reference),
+      new DetectedReferenceModal(this.app, refText || matchedText, result.text, sourceLabel, () =>
+        this.openDetectedReferenceExternally(reference),
       ).open();
     } catch (error: unknown) {
       logger.error(
