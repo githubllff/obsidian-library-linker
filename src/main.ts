@@ -342,8 +342,8 @@ export default class JWLibraryLinkerPlugin extends Plugin {
   }
 
   async insertBibleQuoteForReference(
+    _editor: Editor,
     reference: BibleReference,
-    _matchedText?: string,
   ): Promise<string | null> {
     const result = await this.bibleCitationProvider.getCitation(reference, this.settings.language);
 
@@ -633,7 +633,8 @@ export default class JWLibraryLinkerPlugin extends Plugin {
     }
 
     try {
-      const quoteText = await this.insertBibleQuoteForReference(reference, matchedText);
+      const result = await this.bibleCitationProvider.getCitation(reference, this.settings.language);
+      const quoteText = result.success ? result.text : null;
 
       if (!quoteText) {
         this.openDetectedReferenceExternally(reference);
