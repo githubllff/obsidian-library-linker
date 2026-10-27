@@ -223,8 +223,11 @@ export class JWLibraryLinkerSettings extends PluginSettingTab {
             const input = document.createElement('input');
             input.type = 'file';
             input.accept = '.epub,application/epub+zip';
+            input.style.display = 'none';
+            document.body.appendChild(input);
             input.onchange = async () => {
               const file = input.files?.[0];
+              input.remove();
               if (!file) return;
               const data = new Uint8Array(await file.arrayBuffer());
               try {
