@@ -149,7 +149,9 @@ export class JWLibraryLinkerSettings extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('Insert quote on same line')
-      .setDesc('Insert the quote immediately after the link on the same line instead of a new line.')
+      .setDesc(
+        'Insert the quote immediately after the link on the same line instead of a new line.',
+      )
       .addToggle((toggle) =>
         toggle
           .setValue(this.plugin.settings.bibleQuote.insertOnSameLine ?? false)
