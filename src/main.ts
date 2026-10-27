@@ -50,6 +50,7 @@ export const DEFAULT_SETTINGS: LinkReplacerSettings = {
   linkFormat: 'jwlibrary',
   bibleQuote: {
     template: BIBLE_QUOTE_TEMPLATES.short,
+    insertOnSameLine: false,
   },
   offlineBible: {
     enabled: true,

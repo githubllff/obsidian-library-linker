@@ -44,6 +44,7 @@ export const BIBLE_QUOTE_TEMPLATES = {
 
 interface BibleQuoteSettings {
   template: string;
+  insertOnSameLine?: boolean;
 }
 
 interface OfflineBibleSettings {

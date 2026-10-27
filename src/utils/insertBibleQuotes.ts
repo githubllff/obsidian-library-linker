@@ -153,7 +153,8 @@ export async function insertAllBibleQuotes(
         const insertAt = findEndOfLinkInLine(currentLine, linkInfo.url);
         const textAfterLink = currentLine.substring(insertAt);
 
-        let insertion = '\n' + quoteText;
+        const separator = settings.bibleQuote.insertOnSameLine ? ' ' : '\n';
+        let insertion = separator + quoteText;
         if (textAfterLink.trim()) {
           insertion += '\n' + textAfterLink.trim();
         }
@@ -250,7 +251,8 @@ export async function insertBibleQuoteAtCursor(
   }
 
   if (quoteTexts.length > 0) {
-    let combinedText = '\n' + quoteTexts.join('\n\n');
+    const separator = settings.bibleQuote.insertOnSameLine ? ' ' : '\n';
+    let combinedText = separator + quoteTexts.join('\n\n');
     if (textAfterLink.trim()) {
       combinedText += '\n' + textAfterLink.trim();
     }

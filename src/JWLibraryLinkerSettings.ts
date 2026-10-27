@@ -147,6 +147,18 @@ export class JWLibraryLinkerSettings extends PluginSettingTab {
           }),
       );
 
+    new Setting(containerEl)
+      .setName('Insert quote on same line')
+      .setDesc('Insert the quote immediately after the link on the same line instead of a new line.')
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.bibleQuote.insertOnSameLine ?? false)
+          .onChange(async (value) => {
+            this.plugin.settings.bibleQuote.insertOnSameLine = value;
+            await this.plugin.saveSettings();
+          }),
+      );
+
     containerEl.createEl('h3', { text: 'Offline Bible' });
 
     new Setting(containerEl)
