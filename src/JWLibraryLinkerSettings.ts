@@ -148,6 +148,18 @@ export class JWLibraryLinkerSettings extends PluginSettingTab {
       );
 
     new Setting(containerEl)
+      .setName('Custom quote template')
+      .setDesc('Override the template. Variables: {bibleRef}, {bibleRefLinked}, {quote}.')
+      .addTextArea((text) =>
+        text
+          .setValue(this.plugin.settings.bibleQuote.template)
+          .onChange(async (value) => {
+            this.plugin.settings.bibleQuote.template = value;
+            await this.plugin.saveSettings();
+          }),
+      );
+
+    new Setting(containerEl)
       .setName('Insert quote on same line')
       .setDesc(
         'Insert the quote immediately after the link on the same line instead of a new line.',
@@ -207,8 +219,30 @@ export class JWLibraryLinkerSettings extends PluginSettingTab {
         button
           .setButtonText('Import EPUB')
           .setCta()
-          .onClick(() => {
-            new Notice('Use your existing EPUB import flow here.');
+          .onClick(async () => {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.epub,application/epub+zip';
+            input.onchange = async () => {
+              const file = input.files?.[0];
+              if (!file) return;
+              const data = new Uint8Array(await file.arrayBuffer());
+              try {
+                const result = await this.plugin.epubImportService.importBible({
+                  fileData: data,
+                  sourceFileName: file.name,
+                  overwriteExisting: true,
+                });
+                if (result.success) {
+                  new Notice(`Imported offline Bible: ${result.language ?? ''}`);
+                } else {
+                  new Notice(`Import failed: ${result.error ?? 'unknown error'}`);
+                }
+              } catch (e) {
+                new Notice(`Import failed: ${e instanceof Error ? e.message : String(e)}`);
+              }
+            };
+            input.click();
           }),
       );
 
