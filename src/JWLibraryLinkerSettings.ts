@@ -17,6 +17,31 @@ export class JWLibraryLinkerSettings extends PluginSettingTab {
     this.plugin = plugin;
   }
 
+  async renderOfflineBibleList(containerEl: HTMLElement): Promise<void> {
+    containerEl.empty();
+    const repo = this.plugin.offlineBibleRepository;
+    if (!repo) {
+      containerEl.createEl('p', { text: 'Offline Bible repository not initialized.' });
+      return;
+    }
+    const languages = await repo.getInstalledLanguages();
+    if (languages.length === 0) {
+      containerEl.createEl('p', { text: 'No offline Bibles installed.' });
+      return;
+    }
+    for (const lang of languages) {
+      const meta = await repo.getMetadata(lang);
+      const row = containerEl.createDiv({ cls: 'setting-item' });
+      row.createDiv({ text: `${lang}: ${meta?.sourceFileName ?? 'unknown'} (${meta?.chapterCount ?? 0} chapters)` });
+      const btn = row.createEl('button', { text: 'Delete' });
+      btn.onclick = async () => {
+        await repo.removeLanguage(lang);
+        new Notice(`Removed offline Bible for ${lang}`);
+        await this.renderOfflineBibleList(containerEl);
+      };
+    }
+  }
+
   display(): void {
     const { containerEl } = this;
     containerEl.empty();
@@ -291,6 +316,11 @@ export class JWLibraryLinkerSettings extends PluginSettingTab {
             }
           }),
       );
+
+    containerEl.createEl('h3', { text: 'Installed offline Bibles' });
+
+    const offlineContainer = containerEl.createDiv();
+    void this.renderOfflineBibleList(offlineContainer);
 
     containerEl.createEl('h3', { text: 'Reading view detection' });
 

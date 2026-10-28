@@ -139,7 +139,7 @@ export default class JWLibraryLinkerPlugin extends Plugin {
 
   private translationService!: TranslationService;
   private bibleSuggester!: BibleReferenceSuggester;
-  private offlineBibleRepository!: VaultOfflineBibleRepository;
+  offlineBibleRepository!: VaultOfflineBibleRepository;
   private bibleCitationProvider!: ConfiguredBibleCitationProvider;
   epubImportService!: BibleEpubImportService;
 
