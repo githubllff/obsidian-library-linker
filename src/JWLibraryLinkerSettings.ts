@@ -221,20 +221,56 @@ export class JWLibraryLinkerSettings extends PluginSettingTab {
           .setCta()
           .onClick(async () => {
             new Notice('Opening file picker...');
-            const input = document.createElement('input');
-            input.type = 'file';
-            input.accept = '.epub,application/epub+zip';
-            input.style.display = 'none';
-            document.body.appendChild(input);
+            let file: File | null = null;
 
-            const file = await new Promise<File | null>((resolve) => {
-              input.onchange = () => {
-                const f = input.files?.[0] ?? null;
-                input.remove();
-                resolve(f);
-              };
-              input.click();
-            });
+            // Try Electron's native dialog first (works reliably in Obsidian desktop).
+            try {
+              const electron = (window as any).require?.('electron');
+              const dialog = electron?.remote?.dialog || electron?.dialog;
+              if (dialog?.showOpenDialog) {
+                const result = await dialog.showOpenDialog({
+                  properties: ['openFile'],
+                  filters: [{ name: 'EPUB', extensions: ['epub'] }],
+                });
+                const filePath = result?.filePaths?.[0];
+                if (filePath) {
+                  try {
+                    const fs = (window as any).require?.('fs');
+                    if (fs?.readFileSync) {
+                      const buffer = fs.readFileSync(filePath);
+                      file = new File([buffer], filePath.split('/').pop() || filePath.split('\\\\').pop() || 'imported.epub', {
+                        type: 'application/epub+zip',
+                      });
+                    }
+                  } catch (e) {
+                    // fall through
+                  }
+                }
+              }
+            } catch (e) {
+              // fall through to input method
+            }
+
+            if (!file) {
+              const input = document.createElement('input');
+              input.type = 'file';
+              input.accept = '.epub,application/epub+zip';
+              input.style.display = 'none';
+              document.body.appendChild(input);
+              file = await new Promise<File | null>((resolve) => {
+                const timeout = window.setTimeout(() => {
+                  input.remove();
+                  resolve(null);
+                }, 60000);
+                input.onchange = () => {
+                  window.clearTimeout(timeout);
+                  const f = input.files?.[0] ?? null;
+                  input.remove();
+                  resolve(f);
+                };
+                input.click();
+              });
+            }
 
             if (!file) return;
 
