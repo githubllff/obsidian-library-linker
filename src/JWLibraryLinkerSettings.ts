@@ -221,36 +221,20 @@ export class JWLibraryLinkerSettings extends PluginSettingTab {
           .setCta()
           .onClick(async () => {
             new Notice('Opening file picker...');
-            let file: File | null = null;
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.epub,application/epub+zip';
+            input.style.display = 'none';
+            document.body.appendChild(input);
 
-            const picker = (window as any).showOpenFilePicker;
-            if (typeof picker === 'function') {
-              try {
-                const [handle] = await picker({
-                  types: [{ description: 'EPUB files', accept: { 'application/epub+zip': ['.epub'] } }],
-                  multiple: false,
-                });
-                file = await handle.getFile();
-              } catch (e) {
-                if (e && (e as any).name === 'AbortError') return;
-              }
-            }
-
-            if (!file) {
-              const input = document.createElement('input');
-              input.type = 'file';
-              input.accept = '.epub,application/epub+zip';
-              input.style.display = 'none';
-              document.body.appendChild(input);
-              file = await new Promise<File | null>((resolve) => {
-                input.onchange = () => {
-                  const f = input.files?.[0] ?? null;
-                  input.remove();
-                  resolve(f);
-                };
-                input.click();
-              });
-            }
+            const file = await new Promise<File | null>((resolve) => {
+              input.onchange = () => {
+                const f = input.files?.[0] ?? null;
+                input.remove();
+                resolve(f);
+              };
+              input.click();
+            });
 
             if (!file) return;
 
